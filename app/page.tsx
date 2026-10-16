@@ -1,90 +1,62 @@
 'use client'
-
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 
 export default function Home() {
+  const [showSignup, setShowSignup] = useState(false)
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white">
-      <div className="max-w-4xl mx-auto px-4 py-16">
-        {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
-            Patner
-          </h1>
-          <p className="text-xl text-gray-600">
-            Modern Ride-Hailing Platform
-          </p>
+    <div className="min-h-screen bg-[#fafafb]">
+      <header className="flex justify-between items-center px-8 py-4 bg-white border-b">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div>
+          <span className="font-bold text-xl">Patner</span>
         </div>
+        <nav className="hidden md:flex gap-6 text-sm text-gray-600">
+          <span>For Drivers</span>
+          <span>For Passengers</span>
+          <span>Admin Control</span>
+        </nav>
+        <button onClick={()=>setShowSignup(true)} className="bg-blue-600 text-white px-5 py-2 rounded-full text-sm">Get Started</button>
+      </header>
 
-        {/* Hero Section */}
-        <div className="bg-white rounded-lg shadow-lg p-12 mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">
-            The Future of Transportation
-          </h2>
-          <p className="text-gray-600 text-center text-lg mb-8">
-            Patner connects drivers and passengers with a seamless, modern
-            experience. Whether you&apos;re looking for a ride or want to earn
-            money as a driver, Patner makes it easy.
-          </p>
-
-          {/* Feature Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 my-12">
-            <div className="text-center">
-              <div className="text-4xl mb-4">🚗</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                For Drivers
-              </h3>
-              <p className="text-gray-600">
-                Earn money on your own schedule. Simple onboarding and real-time
-                earnings tracking.
-              </p>
+      {!showSignup? (
+        <div className="max-w-6xl mx-auto px-6 py-16">
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h3 className="font-bold mb-2">For Drivers</h3>
+              <p className="text-sm text-gray-500">Earn more with flexible rides. Manage your trips, track earnings.</p>
             </div>
-
-            <div className="text-center">
-              <div className="text-4xl mb-4">👤</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                For Passengers
-              </h3>
-              <p className="text-gray-600">
-                Safe, reliable, and affordable rides at your fingertips. Book
-                instantly and track in real-time.
-              </p>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h3 className="font-bold mb-2">For Passengers</h3>
+              <p className="text-sm text-gray-500">Book a ride in seconds. Track your driver live.</p>
             </div>
-
-            <div className="text-center">
-              <div className="text-4xl mb-4">⚙️</div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Admin Control
-              </h3>
-              <p className="text-gray-600">
-                Manage drivers, monitor earnings, and control platform settings
-                from one dashboard.
-              </p>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h3 className="font-bold mb-2">Admin Control</h3>
+              <p className="text-sm text-gray-500">Complete control over users, drivers, OTP logs and live tracking.</p>
             </div>
           </div>
-        </div>
-
-        {/* CTA Section */}
-        <div className="text-center space-y-6">
-          <h3 className="text-2xl font-bold text-gray-900">
-            Get Started Today
-          </h3>
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/auth/login">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 text-lg rounded-lg">
-                Sign In / Sign Up
-              </Button>
-            </Link>
+          <div className="text-center">
+            <h2 className="text-3xl font-bold mb-2">Get Started Today</h2>
+            <p className="text-gray-500 text-sm mb-6">Join thousands on Patner</p>
+            <button onClick={()=>setShowSignup(true)} className="bg-blue-600 text-white px-8 py-3 rounded-full">Create Your Account</button>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="mt-16 pt-8 border-t border-gray-200 text-center text-gray-600">
-          <p>© 2024 Patner. All rights reserved.</p>
+      ) : (
+        <div className="flex items-center justify-center min-h-[80vh]">
+          <div className="bg-white p-8 rounded-2xl shadow-sm border w-[380px]">
+            <h1 className="text-blue-600 font-bold text-2xl text-center">Patner</h1>
+            <p className="text-center text-sm text-gray-500 mt-1 mb-6">Sign in or Create Account</p>
+            <label className="text-xs font-medium">Full Name</label>
+            <input placeholder="Enter your full name" className="w-full border rounded-lg px-3 py-2.5 text-sm mt-1 mb-4" />
+            <label className="text-xs font-medium">Phone Number</label>
+            <div className="flex items-center border rounded-lg px-3 py-2.5 mt-1 mb-6">
+              <span className="text-sm mr-2">🇵🇰 +92</span>
+              <input placeholder="300 1234567" className="flex-1 outline-none text-sm" />
+            </div>
+            <button className="w-full bg-[#1a1d29] text-white py-3 rounded-lg text-sm">Create Profile</button>
+            <button onClick={()=>setShowSignup(false)} className="w-full text-center text-xs text-blue-600 mt-4">Back to Home</button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
