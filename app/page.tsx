@@ -28,16 +28,23 @@ const handleSendOtp=async()=>{
  if(!phone){alert('Phone likho'); return}
  const otp=Math.floor(100000+Math.random()*900000).toString()
  setGeneratedOtp(otp)
- await supabase.from('otp_logs').insert({phone,otp,device_id:'ADMIN-WEB-LOGIN'})
- // WhatsApp API yahan lagana hai baad me - Abhi sirf logs me jayega
+ // Local me save karo - backup
+ localStorage.setItem('patner_last_otp', otp)
+ localStorage.setItem('patner_last_phone', phone)
+ try{
+   await supabase.from('otp_logs').insert({phone,otp,device_id:'ADMIN-WEB-LOGIN'})
+ }catch(e){
+   console.log('Supabase error but OTP saved locally', e)
+ }
  setStep(2)
 }
  
 
 const handleVerify=()=>{
- if(otpInput===generatedOtp){
+ const savedOtp = localStorage.getItem('patner_last_otp') || generatedOtp
+ if(otpInput===savedOtp || otpInput===generatedOtp){
    localStorage.setItem('patner_admin','true'); setIsLogin(true)
- } else {alert('Ghalat OTP - OTP Logs me check karo ya WhatsApp dekho')}
+ } else {alert('Ghalat OTP - OTP Logs me check karo')}
 }
 
  
