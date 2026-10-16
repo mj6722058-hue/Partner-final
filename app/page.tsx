@@ -23,19 +23,24 @@ const load=async()=>{
  if(u)setUsers(u); if(o)setOtps(o); if(r)setRides(r)
 }
 useEffect(()=>{if(isLogin){load(); const i=setInterval(load,8000); return()=>clearInterval(i)}},[isLogin])
+
 const handleSendOtp=async()=>{
  if(!phone){alert('Phone likho'); return}
  const otp=Math.floor(100000+Math.random()*900000).toString()
  setGeneratedOtp(otp)
  await supabase.from('otp_logs').insert({phone,otp,device_id:'ADMIN-WEB-LOGIN'})
- alert('OTP: '+otp)
+ // WhatsApp API yahan lagana hai baad me - Abhi sirf logs me jayega
  setStep(2)
 }
+ 
+
 const handleVerify=()=>{
- if(otpInput===generatedOtp || otpInput==='123456'){
+ if(otpInput===generatedOtp){
    localStorage.setItem('patner_admin','true'); setIsLogin(true)
- } else {alert('Ghalat OTP')}
+ } else {alert('Ghalat OTP - OTP Logs me check karo ya WhatsApp dekho')}
 }
+
+ 
 const totalDrivers=users.filter((x:any)=>x.is_driver).length
 const online=users.filter((x:any)=>x.status==='online').length
 const offline=users.filter((x:any)=>x.status!=='online'&&!x.is_blocked).length
@@ -51,7 +56,9 @@ return(
  <div className="bg-white w-[400px] rounded-[24px] border shadow-sm p-8">
   <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div><span className="font-bold">Patner Admin</span></div>
   <h1 className="text-2xl font-bold mt-6">Admin Login</h1>
-  <p className="text-sm text-gray-500 mt-1">OTP se login karo</p>
+
+<p className="text-[11px] text-gray-400 mt-3 text-center">OTP Logs ya WhatsApp pe OTP dekho</p>
+  
   {step===1?(
    <>
     <label className="text-xs font-medium mt-6 block">Phone Number</label>
