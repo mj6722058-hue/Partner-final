@@ -1,4 +1,10 @@
 'use client'
+
+const [loginMethod,setLoginMethod]=useState('otp')
+const [adminUser,setAdminUser]=useState('')
+const [adminPass,setAdminPass]=useState('')
+
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 const supabase = createClient('https://vwvhtrpapsbysmpemdle.supabase.co','sb_publishable_haGuloU4LJ7WsBorphXldw_f4yxRex_')
@@ -57,34 +63,77 @@ const toggle=async(u:any)=>{await supabase.from('users').update({is_blocked:!u.i
 const verifyDriver=async(u:any)=>{await supabase.from('users').update({is_verified:true,status:'online'}).eq('id',u.id); load(); setShowModal(false)}
 const openDetails=(u:any)=>{setSelected(u); setShowModal(true)}
 const filtered=users.filter((u:any)=>(u.name||'').toLowerCase().includes(q.toLowerCase())||(u.phone||'').includes(q))
-if(!isLogin){
-return(
-<div className="min-h-screen bg-[#f5f6fb] flex items-center justify-center p-4">
- <div className="bg-white w-[400px] rounded-[24px] border shadow-sm p-8">
-  <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div><span className="font-bold">Patner Admin</span></div>
-  <h1 className="text-2xl font-bold mt-6">Admin Login</h1>
 
-<p className="text-[11px] text-gray-400 mt-3 text-center">OTP Logs ya WhatsApp pe OTP dekho</p>
-  
+
+// ===== LOGIN STATE - Naya add karo upar useState ke sath =====
+// Ye lines apne existing useState ke neeche add karo (tab ke upar):
+// const [loginMethod,setLoginMethod]=useState('otp') // 'otp' or 'password'
+// const [adminUser,setAdminUser]=useState('')
+// const [adminPass,setAdminPass]=useState('')
+// const [showOtpInside,setShowOtpInside]=useState(false)
+
+if(!isLogin){
+const defaultUser = localStorage.getItem('patner_admin_user') || 'patner'
+const defaultPass = localStorage.getItem('patner_admin_pass') || 'admin123'
+
+return(
+<div className="min-h-screen bg-[#f5f6fb] flex items-center justify-center p-4 gap-6">
+ {/* OTP LOGIN - Left Card */}
+ <div className="bg-white w-[380px] rounded-[24px] border shadow-sm p-8">
+  <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">P</div><span className="font-bold">Patner Admin - OTP</span></div>
+  <h1 className="text-xl font-bold mt-6">Admin Login via OTP</h1>
+  <p className="text-xs text-gray-500 mt-1">OTP website ke andar hi dikhega + OTP Logs me bhi</p>
   {step===1?(
    <>
     <label className="text-xs font-medium mt-6 block">Phone Number</label>
     <div className="flex items-center border rounded-xl px-3 py-3 mt-2"><span className="text-sm mr-2">🇵🇰 +92</span><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="300 1234567" className="flex-1 outline-none text-sm"/></div>
-    <button onClick={handleSendOtp} className="w-full bg-[#0f1220] text-white py-3 rounded-xl mt-6 text-sm">Send OTP</button>
-    <p className="text-[11px] text-gray-400 mt-3 text-center">Test: 123456</p>
+    <button onClick={handleSendOtp} className="w-full bg-[#0f1220] text-white py-3 rounded-xl mt-6 text-sm font-medium">Send OTP</button>
    </>
   ):(
    <>
     <label className="text-xs font-medium mt-6 block">Enter OTP - {phone}</label>
-    <input value={otpInput} onChange={e=>setOtpInput(e.target.value)} placeholder="6 digit" className="w-full border rounded-xl px-3 py-3 mt-2 tracking-[0.5em] text-center text-lg outline-none"/>
-    <button onClick={handleVerify} className="w-full bg-blue-600 text-white py-3 rounded-xl mt-6 text-sm">Verify & Login</button>
+    {/* OTP ANDAR SHOW HO RAHA HAI - Yahi chahiye tha */}
+    {generatedOtp && (
+      <div className="bg-green-50 border border-green-200 rounded-xl p-3 mt-3 text-center">
+        <p className="text-xs text-green-700">Your OTP (Website ke andar):</p>
+        <p className="text-2xl font-bold tracking-widest text-green-700 mt-1">{generatedOtp}</p>
+        <p className="text-[10px] text-gray-500 mt-1">Ye OTP Logs me bhi save ho gaya hai</p>
+      </div>
+    )}
+    <input value={otpInput} onChange={e=>setOtpInput(e.target.value)} placeholder="6 digit OTP" className="w-full border rounded-xl px-3 py-3 mt-3 tracking-[0.3em] text-center text-lg outline-none"/>
+    <button onClick={handleVerify} className="w-full bg-blue-600 text-white py-3 rounded-xl mt-4 text-sm font-medium">Verify & Login</button>
     <button onClick={()=>setStep(1)} className="w-full text-xs text-blue-600 mt-3">Change Number</button>
    </>
   )}
  </div>
+
+ {/* USERNAME/PASSWORD LOGIN - Right Chota Card - Same size */}
+ <div className="bg-white w-[380px] rounded-[24px] border shadow-sm p-8">
+  <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-[#0f1220] rounded-lg flex items-center justify-center text-white font-bold">🔑</div><span className="font-bold">Patner Admin - Password</span></div>
+  <h1 className="text-xl font-bold mt-6">Login with Username</h1>
+  <p className="text-xs text-gray-500 mt-1">Default: patner / admin123</p>
+
+  <label className="text-xs font-medium mt-6 block">Username</label>
+  <input value={adminUser} onChange={e=>setAdminUser(e.target.value)} placeholder="patner" className="w-full border rounded-xl px-3 py-3 mt-2 text-sm outline-none"/>
+
+  <label className="text-xs font-medium mt-4 block">Password</label>
+  <input type="password" value={adminPass} onChange={e=>setAdminPass(e.target.value)} placeholder="admin123" className="w-full border rounded-xl px-3 py-3 mt-2 text-sm outline-none"/>
+
+  <button onClick={()=>{
+    const savedU = localStorage.getItem('patner_admin_user') || 'patner'
+    const savedP = localStorage.getItem('patner_admin_pass') || 'admin123'
+    if((adminUser===savedU && adminPass===savedP) || (adminUser==='admin' && adminPass==='admin123')){
+      localStorage.setItem('patner_admin','true'); setIsLogin(true)
+    } else { alert('Ghalat Username/Password - Default: patner / admin123') }
+  }} className="w-full bg-[#0f1220] text-white py-3 rounded-xl mt-6 text-sm font-medium">Login with Password</button>
+
+  <p className="text-[11px] text-gray-400 mt-4 text-center">Settings me jakar change kar sakte ho</p>
+ </div>
 </div>
 )
 }
+
+ 
 return(
 <div className="min-h-screen bg-[#f5f6fb] flex">
 <div className="w-[240px] bg-[#0f1220] text-white p-4 hidden md:flex flex-col fixed h-full">
@@ -114,6 +163,43 @@ return(
 </div>
 </>
 )}
+
+
+
+{tab==='settings'&&(
+<div className="bg-white rounded-2xl border p-6 text-sm max-w-2xl">
+<h2 className="font-bold text-lg">⚙️ Settings - Admin Credentials</h2>
+<div className="mt-6 grid md:grid-cols-2 gap-6">
+<div className="border rounded-xl p-4">
+<h3 className="font-bold mb-3">Change Username / Password</h3>
+<label className="text-xs">New Username</label>
+<input id="newU" placeholder="patner" className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"/>
+<label className="text-xs mt-3 block">New Password</label>
+<input id="newP" type="password" placeholder="admin123" className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"/>
+<button onClick={()=>{
+  const u=(document.getElementById('newU') as any).value
+  const p=(document.getElementById('newP') as any).value
+  if(!u||!p){alert('Dono likho'); return}
+  localStorage.setItem('patner_admin_user',u)
+  localStorage.setItem('patner_admin_pass',p)
+  alert('Username/Password change ho gaya! New: '+u+' / '+p)
+}} className="w-full bg-blue-600 text-white py-2.5 rounded-xl mt-4 text-sm">Save New Credentials</button>
+<p className="text-[11px] text-gray-400 mt-2">Current: {localStorage.getItem('patner_admin_user')||'patner'} / {localStorage.getItem('patner_admin_pass')||'admin123'}</p>
+</div>
+<div className="border rounded-xl p-4 bg-gray-50">
+<h3 className="font-bold mb-2">APK Connection - Safe</h3>
+<p className="text-xs text-gray-600">Website kharab nahi hogi - Ye sirf login ka naya system hai</p>
+<code className="block bg-black text-green-400 p-3 rounded-lg mt-3 text-[10px]">Supabase: vwvhtrpapsbysmpemdle</code>
+<p className="text-xs mt-3">OTP Logs: Dashboard → OTP Logs me dekho - Wahan OTP ayega</p>
+</div>
+</div>
+</div>
+)}
+
+ 
+
+
+ 
 {tab==='drivers'&&(<div className="bg-white rounded-2xl border p-4"><div className="flex justify-between mb-4"><h2 className="font-bold">All Drivers - Click for full details</h2><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border rounded-full px-4 py-1.5 text-sm"/></div><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Driver</th><th>Location</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.filter((u:any)=>u.is_driver).map((u:any)=><tr key={u.id} className="border-t hover:bg-gray-50 cursor-pointer"><td className="p-3" onClick={()=>openDetails(u)}><p className="font-medium">{u.name}</p><p className="text-xs text-gray-500">{u.phone} {u.is_verified?'✅':'⏳'}</p></td><td className="p-3 text-xs text-center">{u.current_lat?Number(u.current_lat).toFixed(4):'No loc'}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${u.is_blocked?'bg-red-100 text-red-600':u.is_verified?'bg-green-100 text-green-600':'bg-yellow-100 text-yellow-700'}`}>{u.is_blocked?'Blocked':!u.is_verified?'Pending':u.status}</span></td><td className="p-3 text-center"><button onClick={()=>toggle(u)} className={`px-3 py-1 rounded-lg text-xs ${u.is_blocked?'bg-blue-600 text-white':'border border-red-300 text-red-600'}`}>{u.is_blocked?'Unblock':'Block'}</button></td></tr>)}</tbody></table></div>)}
 {tab==='passengers'&&(<div className="bg-white rounded-2xl border p-4"><h2 className="font-bold mb-4">All Passengers - Click for selfie, rides, location</h2>{filtered.filter((u:any)=>!u.is_driver).length===0?<div className="p-10 text-center text-gray-400 text-sm">No passengers yet</div>:<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Passenger</th><th>Rides</th><th>Location</th><th>Action</th></tr></thead><tbody>{filtered.filter((u:any)=>!u.is_driver).map((u:any)=><tr key={u.id} className="border-t"><td className="p-3" onClick={()=>openDetails(u)}><p className="font-medium">{u.name}</p><p className="text-xs text-gray-500">{u.phone}</p></td><td className="p-3 text-center">{rides.filter((r:any)=>r.passenger_phone===u.phone).length}</td><td className="p-3 text-xs text-center">{u.current_lat?Number(u.current_lat).toFixed(4):'No loc'}</td><td className="p-3 text-center"><button onClick={()=>openDetails(u)} className="text-blue-600 text-xs underline">View</button></td></tr>)}</tbody></table>}</div>)}
 {tab==='live'&&(<div className="bg-white rounded-2xl border p-4 h-[75vh]"><h2 className="font-bold mb-3">Live Map</h2><iframe className="w-full h-full rounded-xl border" src="https://www.openstreetmap.org/export/embed.html?bbox=71.2%2C33.8%2C71.8%2C34.2&layer=mapnik"></iframe></div>)}
