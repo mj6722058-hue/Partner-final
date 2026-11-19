@@ -21,6 +21,20 @@ const [adminUser,setAdminUser]=useState('')
 const [adminPass,setAdminPass]=useState('')
 const [newUser,setNewUser]=useState('')
 const [newPass,setNewPass]=useState('')
+const [accounts,setAccounts]=useState<{username:string,password:string,created_at:string,blocked:boolean}[]>([])
+const readAccounts=()=>{try{return JSON.parse(localStorage.getItem('patner_admin_accounts')||'[]')}catch(e){return []}}
+const saveAccounts=(list:any[])=>{localStorage.setItem('patner_admin_accounts',JSON.stringify(list)); setAccounts(list)}
+useEffect(()=>{setAccounts(readAccounts())},[])
+const createAccount=()=>{
+ if(!newUser||!newPass){alert('Dono likho'); return}
+ const list=readAccounts()
+ const i=list.findIndex((a:any)=>a.username===newUser)
+ if(i>=0){list[i].password=newPass} else {list.push({username:newUser,password:newPass,created_at:new Date().toISOString(),blocked:false})}
+ saveAccounts(list)
+ localStorage.setItem('patner_admin_user',newUser); localStorage.setItem('patner_admin_pass',newPass)
+ alert('Save ho gaya!'); setNewUser(''); setNewPass('')
+}
+const toggleAccount=(username:string)=>{saveAccounts(readAccounts().map((a:any)=>a.username===username?{...a,blocked:!a.blocked}:a))}
 
 useEffect(()=>{const s=localStorage.getItem('patner_admin'); if(s) setIsLogin(true)},[])
 const load=async()=>{
@@ -46,6 +60,11 @@ const handleVerify=()=>{
  } else alert('Ghalat OTP')
 }
 const handleUserLogin=()=>{
+ const acc=readAccounts().find((a:any)=>a.username===adminUser && a.password===adminPass)
+ if(acc){
+   if(acc.blocked){alert('Ye ID block hai'); return}
+   localStorage.setItem('patner_admin','true'); setIsLogin(true); return
+ }
  const savedU=localStorage.getItem('patner_admin_user')||'patner'
  const savedP=localStorage.getItem('patner_admin_pass')||'admin123'
  if((adminUser===savedU && adminPass===savedP) || (adminUser==='patner'&&adminPass==='admin123')){
@@ -156,9 +175,19 @@ return(
 <input value={newUser} onChange={e=>setNewUser(e.target.value)} placeholder="New username" className="w-full border-2 border-black rounded-full px-4 py-2.5 mt-1 text-sm"/>
 <label className="text-xs font-bold mt-3 block">New Password</label>
 <input value={newPass} onChange={e=>setNewPass(e.target.value)} type="password" placeholder="New password" className="w-full border-2 border-black rounded-full px-4 py-2.5 mt-1 text-sm"/>
-<button onClick={()=>{ if(!newUser||!newPass){alert('Dono likho'); return} localStorage.setItem('patner_admin_user',newUser); localStorage.setItem('patner_admin_pass',newPass); alert('Save ho gaya!'); setNewUser(''); setNewPass('')}} className="w-full bg-black text-white py-3 rounded-full mt-4 text-sm font-bold">Save Credentials</button>
+<button onClick={createAccount} className="w-full bg-black text-white py-3 rounded-full mt-4 text-sm font-bold">Save Credentials</button>
 </div>
 <div className="border rounded-2xl p-5 bg-gray-50"><h3 className="font-bold">App Settings</h3><p className="text-sm mt-2">Driver ID = Passenger ID: Enabled ✅</p><p className="text-sm">City: Peshawar</p><p className="text-sm">Version: Final 2.0</p></div>
+</div>
+<div className="mt-6 border rounded-2xl p-5">
+<div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+<h3 className="font-bold">Created User IDs</h3>
+<div className="flex gap-2 text-xs"><span className="px-3 py-1 rounded-full bg-gray-100 font-bold">Total: {accounts.length}</span><span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-bold">Active: {accounts.filter(a=>!a.blocked).length}</span><span className="px-3 py-1 rounded-full bg-red-100 text-red-700 font-bold">Blocked: {accounts.filter(a=>a.blocked).length}</span></div>
+</div>
+{accounts.length===0?(<p className="text-sm text-gray-400">Abhi koi user ID nahi banai</p>):(
+<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Created</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+{accounts.map((a,i)=><tr key={a.username} className="border-t"><td className="p-3 text-xs text-gray-500">{i+1}</td><td className="p-3 font-medium">{a.username}</td><td className="p-3 text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${a.blocked?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{a.blocked?'Blocked':'Active'}</span></td><td className="p-3 text-center"><button onClick={()=>toggleAccount(a.username)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${a.blocked?'bg-blue-600':'bg-red-600'}`}>{a.blocked?'Unblock':'Block'}</button></td></tr>)}
+</tbody></table>)}
 </div>
 </div>
 )}
