@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
     // attach activity (online / login time / device / location) from the newest session of each ID
     let tracking = true
     let sessions: any[] = []
-    const names = (data || []).map((a: any) => a.username)
+    const rootUser = process.env.ADMIN_USER || ''
+    const names = [...(data || []).map((a: any) => a.username), ...(rootUser ? [rootUser] : [])]
     if (names.length) {
       const r = await adminDb()
         .from('admin_sessions')
@@ -53,18 +54,17 @@ export async function GET(req: NextRequest) {
         console.error('admin_sessions missing? run lib/admin_sessions.sql', r.error)
       } else sessions = r.data || []
     }
-    const accounts = (data || []).map((a: any) => {
-      const mine = sessions.filter((x) => x.username === a.username)
+    const activityFor = (name: string) => {
+      const mine = sessions.filter((x) => x.username === name)
       const live = mine.filter((x) => isOnline(x)).sort((x, y) => (x.last_seen < y.last_seen ? 1 : -1))[0]
       const show = live || mine[0]
-      let activity: any = null
-      if (show) {
-        const { id, user_agent, username, ...rest } = show
-        activity = { ...rest, online: !!live }
-      }
-      return { ...a, activity }
-    })
-    return NextResponse.json({ accounts, tracking })
+      if (!show) return null
+      const { id, user_agent, username, ...rest } = show
+      return { ...rest, online: !!live }
+    }
+    const accounts = (data || []).map((a: any) => ({ ...a, activity: activityFor(a.username) }))
+    const main = rootUser ? { username: rootUser, activity: activityFor(rootUser) } : null
+    return NextResponse.json({ accounts, main, tracking })
   } catch (e) {
     return serverError(e)
   }
@@ -120,6 +120,7 @@ export async function PATCH(req: NextRequest) {
       throw error
     }
     if (!data || data.length === 0) return fail('ID nahi mili', 404)
+    if (update.username) await adminDb().from('admin_sessions').update({ username: update.username }).eq('username', b.username)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return serverError(e)
@@ -135,6 +136,7 @@ export async function DELETE(req: NextRequest) {
     if (typeof b.username !== 'string' || !b.username) return fail('ID nahi di', 400)
     const { error } = await adminDb().from('admin_accounts').delete().eq('username', b.username)
     if (error) throw error
+    await adminDb().from('admin_sessions').delete().eq('username', b.username)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return serverError(e)

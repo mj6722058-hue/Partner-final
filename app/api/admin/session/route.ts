@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const s = await getSession(req) // also returns null if the ID was blocked or deleted -> page logs out
     if (!s) return fail('Login nahi hai', 401)
-    if (s.r !== 'acct' || !s.sid) return NextResponse.json({ ok: true })
+    if (!s.sid) return NextResponse.json({ ok: true }) // logged in before tracking existed
 
     const b = await req.json().catch(() => ({}))
     const now = new Date().toISOString()

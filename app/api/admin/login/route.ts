@@ -65,8 +65,8 @@ export async function POST(req: NextRequest) {
 
     clearFails(ip)
 
-    // Record this login (time, device, approximate location) for created IDs. Never blocks the login if it fails.
-    if (session.r === 'acct') {
+    // Record this login (time, device, approximate location) for every ID, including the main admin. Never blocks the login if it fails.
+    {
       try {
         const dev = body?.device || {}
         const geo = clientGeo(req)
@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
           .from('admin_sessions')
           .insert({
             username: session.u,
+            is_root: session.r === 'root',
             ...parseDevice(req.headers.get('user-agent') || '', dev.hints, Number(dev.touch) || 0),
             screen: clip(dev.screen, 20),
             language: clip(dev.language, 20),

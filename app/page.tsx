@@ -39,16 +39,22 @@ const [formErr,setFormErr]=useState('')
 const [shown,setShown]=useState<Record<string,string>>({})
 const [accounts,setAccounts]=useState<{username:string,created_at:string,blocked:boolean,activity:any}[]>([])
 const [tracking,setTracking]=useState(true)
+const [main,setMain]=useState<{username:string,activity:any}|null>(null)
+const [locState,setLocState]=useState<'idle'|'granted'|'denied'|'unavailable'>('idle')
+const watchRef=useRef<number|null>(null)
 const [hist,setHist]=useState<{username:string,rows:any[]|null}|null>(null)
 const [live,setLive]=useState<{username:string,s:any}|null>(null)
 const gpsRef=useRef<any>(null)
+const actCell=(ac:any,name:string)=>(<td className="p-3 text-xs whitespace-nowrap">{ac?(<><span className={`inline-flex items-center gap-1 font-bold ${ac.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${ac.online?'bg-green-500':'bg-gray-300'}`}></span>{ac.online?'Online':'Offline'}</span><p className="text-gray-500 mt-1">Login: {fmt(ac.login_at)}</p><p className="text-gray-500">{ac.online?'Abhi active hai':ac.logout_at?'Logout: '+fmt(ac.logout_at):'Last seen: '+fmt(ac.last_seen)}</p><button onClick={()=>openHistory(name)} className="text-blue-600 underline mt-1">History</button></>):<span className="text-gray-400">Abhi tak login nahi kiya</span>}</td>)
+const devCell=(ac:any)=>(<td className="p-3 text-xs whitespace-nowrap">{ac?(<><p className="font-bold">{devIcon(ac.device_type)} {ac.device_type}{ac.device_model?' · '+ac.device_model:''}</p><p className="text-gray-500">{ac.os} {ac.os_version}</p><p className="text-gray-500">{ac.browser} {ac.browser_version}</p></>):<span className="text-gray-400">—</span>}</td>)
+const locCell=(ac:any,name:string)=>(<td className="p-3 text-xs whitespace-nowrap">{ac?(<><p className="font-medium">{place(ac)}</p><p className="text-gray-400">{ac.ip||''}</p><button onClick={()=>openLive(name)} className="mt-1 px-2 py-1 rounded-lg bg-blue-600 text-white font-bold">📍 Location</button></>):<span className="text-gray-400">—</span>}</td>)
 const api=async(url:string,method='GET',body?:any)=>{
  const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined})
  const d=await r.json().catch(()=>({}))
  if(r.status===401) setIsLogin(false)
  return {ok:r.ok,data:d}
 }
-const loadAccounts=async()=>{const r=await api('/api/admin/accounts'); if(r.ok){setAccounts(r.data.accounts||[]); setTracking(r.data.tracking!==false)}}
+const loadAccounts=async()=>{const r=await api('/api/admin/accounts'); if(r.ok){setAccounts(r.data.accounts||[]); setMain(r.data.main||null); setTracking(r.data.tracking!==false)}}
 useEffect(()=>{if(isLogin&&role==='root'){loadAccounts(); if(tab==='settings'){const i=setInterval(loadAccounts,15000); return()=>clearInterval(i)}}},[isLogin,role,tab])
 const openHistory=async(username:string)=>{setHist({username,rows:null}); const r=await api('/api/admin/sessions?username='+encodeURIComponent(username)+'&limit=20'); setHist({username,rows:r.ok?(r.data.sessions||[]):[]})}
 const openLive=(username:string)=>setLive({username,s:null})
@@ -59,20 +65,24 @@ useEffect(()=>{
  tick(); const i=setInterval(tick,10000); return()=>clearInterval(i)
 },[live?.username])
 
-// created IDs: tell the server we are still here (every 30s) and share location if the browser allows it
-useEffect(()=>{
- if(!isLogin||role!=='user') return
- let watchId:number|null=null
+// every logged-in person: tell the server we are still here (every 30s)
+const startGeo=()=>{
+ if(typeof navigator==='undefined'||!('geolocation' in navigator)){gpsRef.current={status:'unavailable'}; setLocState('unavailable'); return}
+ if(watchRef.current!==null) navigator.geolocation.clearWatch(watchRef.current)
  let first=true
- const ping=()=>{fetch('/api/admin/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(gpsRef.current||{status:'pending'})}).then(r=>{if(r.status===401) setIsLogin(false)}).catch(()=>{})}
- if(typeof navigator!=='undefined'&&'geolocation' in navigator){
-  watchId=navigator.geolocation.watchPosition(
-   p=>{gpsRef.current={status:'granted',lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy}; if(first){first=false; ping()}},
-   e=>{gpsRef.current={status:e.code===1?'denied':'unavailable'}},
-   {enableHighAccuracy:true,maximumAge:10000,timeout:30000})
- } else gpsRef.current={status:'unavailable'}
- ping(); const i=setInterval(ping,30000)
- return()=>{clearInterval(i); if(watchId!==null) navigator.geolocation.clearWatch(watchId)}
+ watchRef.current=navigator.geolocation.watchPosition(
+  p=>{gpsRef.current={status:'granted',lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy}; setLocState('granted'); if(first){first=false; sendPing()}},
+  e=>{if(e.code===1){gpsRef.current={status:'denied'}; setLocState('denied')} else if(e.code===2){gpsRef.current={status:'unavailable'}; setLocState('unavailable')}},
+  {enableHighAccuracy:true,maximumAge:10000,timeout:30000})
+}
+const sendPing=()=>{fetch('/api/admin/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(gpsRef.current||{status:'pending'})}).then(r=>{if(r.status===401) setIsLogin(false)}).catch(()=>{})}
+useEffect(()=>{
+ if(!isLogin||!role) return
+ sendPing(); const i=setInterval(sendPing,30000)
+ // if the browser already has permission, start straight away (no prompt); otherwise the banner button asks
+ let permStatus:any=null
+ try{(navigator as any).permissions?.query({name:'geolocation'}).then((ps:any)=>{permStatus=ps; if(ps.state==='granted') startGeo(); else if(ps.state==='denied'){gpsRef.current={status:'denied'}; setLocState('denied')}; ps.onchange=()=>{if(ps.state==='granted') startGeo()}}).catch(()=>{})}catch(e){}
+ return()=>{clearInterval(i); if(permStatus) permStatus.onchange=null; if(watchRef.current!==null&&typeof navigator!=='undefined'){navigator.geolocation.clearWatch(watchRef.current); watchRef.current=null}}
 },[isLogin,role])
 const resetForm=(u:string)=>{setFUser(u); setFPass(''); setFConf(''); setShowP(false); setShowC(false); setFormErr('')}
 const openCreate=()=>{resetForm(''); setEditing(''); setModal('create')}
@@ -182,6 +192,7 @@ return(
 <div className="md:hidden flex gap-2 overflow-x-auto px-4 pb-3">{tabList.map(([k,l])=>(<button key={k} onClick={()=>setTab(k)} className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-xs font-medium ${tab===k?'bg-[#2d5bff] text-white':'bg-gray-100 text-gray-600'}`}>{l}</button>))}</div>
 </div>
 <div className="p-4 md:p-6">
+{locState!=='granted'&&(<div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><p className="font-bold text-sm text-amber-900">📍 Location abhi band hai</p><p className="text-xs text-amber-800 mt-1">{locState==='denied'?'Browser ne location block ki hui hai. Chrome ka ⋮ menu → Settings → Site settings → Location mein is site ko Allow karein, phir neeche button dabayen.':locState==='unavailable'?'Is device par location available nahi (GPS band ho sakta hai).':'Admin ko aap ki location dikhane ke liye browser ki ijazat chahiye. Button dabayen aur "Allow" chunen.'}</p><p className="text-[11px] text-amber-700 mt-1">Agar "This site can&apos;t ask for your permission" aaye to doosri apps ke floating bubbles/overlay (Messenger, Snapchat wagaira) band karke "Try again" dabayen.</p></div><button onClick={startGeo} className="shrink-0 bg-amber-600 text-white font-bold text-sm px-5 py-2.5 rounded-full">Location ON karein</button></div>)}
 {tab==='dashboard'&&(
 <>
 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -226,12 +237,11 @@ return(
 <div className="flex gap-2 text-xs"><span className="px-3 py-1 rounded-full bg-gray-100 font-bold">Total: {accounts.length}</span><span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-bold">Active: {accounts.filter(a=>!a.blocked).length}</span><span className="px-3 py-1 rounded-full bg-red-100 text-red-700 font-bold">Blocked: {accounts.filter(a=>a.blocked).length}</span></div>
 </div>
 {!tracking&&<p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">Activity record ke liye Supabase mein lib/admin_sessions.sql run karna baqi hai.</p>}
-{accounts.length===0?(<p className="text-sm text-gray-400">Abhi koi user ID nahi banai</p>):(
+{accounts.length===0&&!main?(<p className="text-sm text-gray-400">Abhi koi user ID nahi banai</p>):(
 <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Password</th><th className="p-3 text-left">Created</th><th className="p-3 text-left">Activity</th><th className="p-3 text-left">Device</th><th className="p-3 text-left">Location</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+{main&&(<tr className="border-t bg-blue-50/50"><td className="p-3 text-xs text-gray-500">★</td><td className="p-3 font-medium">{main.username}<span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-blue-600 text-white">Main Admin</span></td><td className="p-3 text-xs text-gray-400">Vercel mein</td><td className="p-3 text-xs text-gray-400">—</td>{actCell(main.activity,main.username)}{devCell(main.activity)}{locCell(main.activity,main.username)}<td className="p-3 text-center"><span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">Main</span></td><td className="p-3 text-center text-xs text-gray-400">—</td></tr>)}
 {accounts.map((a,i)=><tr key={a.username} className="border-t"><td className="p-3 text-xs text-gray-500">{i+1}</td><td className="p-3 font-medium">{a.username}</td><td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{shown[a.username]!==undefined?shown[a.username]:'******'}</span><button onClick={()=>toggleShow(a.username)} className="text-gray-500 hover:text-black" title={shown[a.username]!==undefined?'Hide':'Show'}><EyeIcon open={shown[a.username]!==undefined}/></button></div></td><td className="p-3 text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</td>
-<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><span className={`inline-flex items-center gap-1 font-bold ${a.activity.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${a.activity.online?'bg-green-500':'bg-gray-300'}`}></span>{a.activity.online?'Online':'Offline'}</span><p className="text-gray-500 mt-1">Login: {fmt(a.activity.login_at)}</p><p className="text-gray-500">{a.activity.online?'Abhi active hai':a.activity.logout_at?'Logout: '+fmt(a.activity.logout_at):'Last seen: '+fmt(a.activity.last_seen)}</p><button onClick={()=>openHistory(a.username)} className="text-blue-600 underline mt-1">History</button></>):<span className="text-gray-400">Abhi tak login nahi kiya</span>}</td>
-<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><p className="font-bold">{devIcon(a.activity.device_type)} {a.activity.device_type}{a.activity.device_model?' · '+a.activity.device_model:''}</p><p className="text-gray-500">{a.activity.os} {a.activity.os_version}</p><p className="text-gray-500">{a.activity.browser} {a.activity.browser_version}</p></>):<span className="text-gray-400">—</span>}</td>
-<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><p className="font-medium">{place(a.activity)}</p><p className="text-gray-400">{a.activity.ip||''}</p><button onClick={()=>openLive(a.username)} className="mt-1 px-2 py-1 rounded-lg bg-blue-600 text-white font-bold">📍 Location</button></>):<span className="text-gray-400">—</span>}</td>
+{actCell(a.activity,a.username)}{devCell(a.activity)}{locCell(a.activity,a.username)}
 <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${a.blocked?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{a.blocked?'Blocked':'Active'}</span></td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={()=>openEdit(a)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleAccount(a)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${a.blocked?'bg-blue-600':'bg-red-600'}`}>{a.blocked?'Unblock':'Block'}</button><button onClick={()=>deleteAccount(a.username)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td></tr>)}
 </tbody></table></div>)}
 </div>

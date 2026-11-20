@@ -1,8 +1,9 @@
 -- Run this once in Supabase: SQL Editor -> New query -> paste -> Run
--- (admin_accounts table must already exist: lib/admin_accounts.sql)
+-- (If you already ran an older version of this file, run lib/admin_sessions_root.sql instead.)
 create table if not exists admin_sessions (
   id uuid primary key default gen_random_uuid(),
-  username text not null references admin_accounts(username) on update cascade on delete cascade,
+  username text not null,
+  is_root boolean not null default false,  -- true = login with the main admin username/password
   login_at timestamptz not null default now(),
   last_seen timestamptz not null default now(),
   logout_at timestamptz,
