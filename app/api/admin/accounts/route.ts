@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { decryptText, encryptText, hashPassword } from '@/lib/admin-crypto'
-import { adminDb, fail, getSession, serverError } from '@/lib/admin-server'
+import { adminDb, fail, getSession, isOnline, serverError } from '@/lib/admin-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,7 +36,35 @@ export async function GET(req: NextRequest) {
       .select('username,blocked,created_at')
       .order('created_at', { ascending: true })
     if (error) throw error
-    return NextResponse.json({ accounts: data })
+
+    // attach activity (online / login time / device / location) from the newest session of each ID
+    let tracking = true
+    let sessions: any[] = []
+    const names = (data || []).map((a: any) => a.username)
+    if (names.length) {
+      const r = await adminDb()
+        .from('admin_sessions')
+        .select('*')
+        .in('username', names)
+        .order('login_at', { ascending: false })
+        .limit(500)
+      if (r.error) {
+        tracking = false // table not created yet
+        console.error('admin_sessions missing? run lib/admin_sessions.sql', r.error)
+      } else sessions = r.data || []
+    }
+    const accounts = (data || []).map((a: any) => {
+      const mine = sessions.filter((x) => x.username === a.username)
+      const live = mine.filter((x) => isOnline(x)).sort((x, y) => (x.last_seen < y.last_seen ? 1 : -1))[0]
+      const show = live || mine[0]
+      let activity: any = null
+      if (show) {
+        const { id, user_agent, username, ...rest } = show
+        activity = { ...rest, online: !!live }
+      }
+      return { ...a, activity }
+    })
+    return NextResponse.json({ accounts, tracking })
   } catch (e) {
     return serverError(e)
   }

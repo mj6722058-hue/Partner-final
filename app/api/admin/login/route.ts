@@ -11,7 +11,8 @@ import {
   signSession,
   verifyPassword,
 } from '@/lib/admin-crypto'
-import { adminDb, fail, serverError } from '@/lib/admin-server'
+import { adminDb, clientGeo, fail, serverError } from '@/lib/admin-server'
+import { clip, parseDevice } from '@/lib/device'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -63,6 +64,32 @@ export async function POST(req: NextRequest) {
     }
 
     clearFails(ip)
+
+    // Record this login (time, device, approximate location) for created IDs. Never blocks the login if it fails.
+    if (session.r === 'acct') {
+      try {
+        const dev = body?.device || {}
+        const geo = clientGeo(req)
+        const { data, error } = await adminDb()
+          .from('admin_sessions')
+          .insert({
+            username: session.u,
+            ...parseDevice(req.headers.get('user-agent') || '', dev.hints, Number(dev.touch) || 0),
+            screen: clip(dev.screen, 20),
+            language: clip(dev.language, 20),
+            timezone: clip(dev.timezone, 60),
+            user_agent: clip(req.headers.get('user-agent'), 400),
+            ...geo,
+          })
+          .select('id')
+          .single()
+        if (error) throw error
+        session.sid = data.id
+      } catch (e) {
+        console.error('session log failed (run lib/admin_sessions.sql?)', e)
+      }
+    }
+
     const res = NextResponse.json({ ok: true, role: session.r === 'root' ? 'root' : 'user' })
     res.cookies.set(COOKIE, signSession(session), {
       httpOnly: true,

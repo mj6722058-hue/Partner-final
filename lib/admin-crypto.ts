@@ -58,7 +58,7 @@ export function decryptText(s: string) {
 // ---- signed session cookie ----
 export const COOKIE = 'patner_session'
 export const SESSION_MS = 12 * 60 * 60 * 1000
-export type Session = { u: string; r: 'root' | 'acct'; exp: number }
+export type Session = { u: string; r: 'root' | 'acct'; exp: number; sid?: string }
 
 export function signSession(s: Session) {
   const body = Buffer.from(JSON.stringify(s)).toString('base64url')
@@ -75,6 +75,7 @@ export function readSession(token?: string | null): Session | null {
     const s = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
     if (!s || typeof s.u !== 'string' || (s.r !== 'root' && s.r !== 'acct') || typeof s.exp !== 'number') return null
     if (s.exp < Date.now()) return null
+    if (s.sid !== undefined && typeof s.sid !== 'string') return null
     return s as Session
   } catch {
     return null

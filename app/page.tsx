@@ -1,9 +1,16 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 const supabase = createClient('https://vwvhtrpapsbysmpemdle.supabase.co','sb_publishable_haGuloU4LJ7WsBorphXldw_f4yxRex_')
 
 function EyeIcon({open}:{open:boolean}){return(<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{open?(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>):(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>)}</svg>)}
+
+const fmt=(t?:string|null)=>t?new Date(t).toLocaleString([],{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}):'—'
+const ago=(t?:string|null)=>{if(!t) return ''; const x=Math.max(0,Math.round((Date.now()-new Date(t).getTime())/1000)); return x<60?x+' sec pehle':x<3600?Math.round(x/60)+' min pehle':Math.round(x/3600)+' ghante pehle'}
+const dur=(a?:string|null,b?:string|null)=>{if(!a||!b) return ''; const m=Math.max(0,Math.round((new Date(b).getTime()-new Date(a).getTime())/60000)); return m<60?m+' min':Math.floor(m/60)+' ghante '+(m%60)+' min'}
+const place=(a:any)=>[a?.city,a?.region,a?.country].filter(Boolean).join(', ')||'Maloom nahi'
+const devIcon=(t?:string)=>t==='Mobile'?'📱':t==='Tablet'?'📲':'💻'
+const coords=(s:any)=>s?.gps_lat!=null&&s?.gps_lon!=null?{lat:s.gps_lat as number,lon:s.gps_lon as number,gps:true}:s?.ip_lat!=null&&s?.ip_lon!=null?{lat:s.ip_lat as number,lon:s.ip_lon as number,gps:false}:null
 
 export default function Page(){
 const [isLogin,setIsLogin]=useState(false)
@@ -30,15 +37,43 @@ const [showP,setShowP]=useState(false)
 const [showC,setShowC]=useState(false)
 const [formErr,setFormErr]=useState('')
 const [shown,setShown]=useState<Record<string,string>>({})
-const [accounts,setAccounts]=useState<{username:string,created_at:string,blocked:boolean}[]>([])
+const [accounts,setAccounts]=useState<{username:string,created_at:string,blocked:boolean,activity:any}[]>([])
+const [tracking,setTracking]=useState(true)
+const [hist,setHist]=useState<{username:string,rows:any[]|null}|null>(null)
+const [live,setLive]=useState<{username:string,s:any}|null>(null)
+const gpsRef=useRef<any>(null)
 const api=async(url:string,method='GET',body?:any)=>{
  const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined})
  const d=await r.json().catch(()=>({}))
  if(r.status===401) setIsLogin(false)
  return {ok:r.ok,data:d}
 }
-const loadAccounts=async()=>{const r=await api('/api/admin/accounts'); if(r.ok) setAccounts(r.data.accounts||[])}
-useEffect(()=>{if(isLogin&&role==='root') loadAccounts()},[isLogin,role])
+const loadAccounts=async()=>{const r=await api('/api/admin/accounts'); if(r.ok){setAccounts(r.data.accounts||[]); setTracking(r.data.tracking!==false)}}
+useEffect(()=>{if(isLogin&&role==='root'){loadAccounts(); if(tab==='settings'){const i=setInterval(loadAccounts,15000); return()=>clearInterval(i)}}},[isLogin,role,tab])
+const openHistory=async(username:string)=>{setHist({username,rows:null}); const r=await api('/api/admin/sessions?username='+encodeURIComponent(username)+'&limit=20'); setHist({username,rows:r.ok?(r.data.sessions||[]):[]})}
+const openLive=(username:string)=>setLive({username,s:null})
+useEffect(()=>{
+ if(!live) return
+ const u=live.username
+ const tick=async()=>{const r=await api('/api/admin/sessions?username='+encodeURIComponent(u)+'&limit=1'); if(r.ok) setLive(l=>l&&l.username===u?{username:u,s:(r.data.sessions||[])[0]||null}:l)}
+ tick(); const i=setInterval(tick,10000); return()=>clearInterval(i)
+},[live?.username])
+
+// created IDs: tell the server we are still here (every 30s) and share location if the browser allows it
+useEffect(()=>{
+ if(!isLogin||role!=='user') return
+ let watchId:number|null=null
+ let first=true
+ const ping=()=>{fetch('/api/admin/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(gpsRef.current||{status:'pending'})}).then(r=>{if(r.status===401) setIsLogin(false)}).catch(()=>{})}
+ if(typeof navigator!=='undefined'&&'geolocation' in navigator){
+  watchId=navigator.geolocation.watchPosition(
+   p=>{gpsRef.current={status:'granted',lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy}; if(first){first=false; ping()}},
+   e=>{gpsRef.current={status:e.code===1?'denied':'unavailable'}},
+   {enableHighAccuracy:true,maximumAge:10000,timeout:30000})
+ } else gpsRef.current={status:'unavailable'}
+ ping(); const i=setInterval(ping,30000)
+ return()=>{clearInterval(i); if(watchId!==null) navigator.geolocation.clearWatch(watchId)}
+},[isLogin,role])
 const resetForm=(u:string)=>{setFUser(u); setFPass(''); setFConf(''); setShowP(false); setShowC(false); setFormErr('')}
 const openCreate=()=>{resetForm(''); setEditing(''); setModal('create')}
 const openEdit=(a:any)=>{resetForm(a.username); setEditing(a.username); setModal('edit')}
@@ -86,7 +121,13 @@ const handleUserLogin=async()=>{
  if(!adminUser||!adminPass){alert('Username aur password likho'); return}
  setBusy(true)
  try{
-  const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:adminUser,password:adminPass})})
+  let device:any={}
+  try{
+   const nav:any=navigator; let hints:any={}
+   if(nav.userAgentData){const h=await nav.userAgentData.getHighEntropyValues(['platformVersion','model']); hints={platform:nav.userAgentData.platform,mobile:nav.userAgentData.mobile,platformVersion:h.platformVersion,model:h.model}}
+   device={hints,touch:navigator.maxTouchPoints||0,screen:screen.width+'x'+screen.height,language:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}
+  }catch(e){}
+  const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:adminUser,password:adminPass,device})})
   const d=await r.json().catch(()=>({}))
   if(r.ok){setRole(d.role); setIsLogin(true); setAdminPass('')} else alert(d.error||'Login nahi hua')
  }catch(e){alert('Network masla, dobara try karein')}
@@ -118,6 +159,7 @@ return(
    <div className="border-2 border-black rounded-full px-6 py-4"><input value={adminUser} onChange={e=>setAdminUser(e.target.value)} placeholder="User name" className="w-full outline-none text-sm font-medium bg-transparent"/></div>
    <div className="border-2 border-black rounded-full pl-6 pr-5 py-4 flex items-center"><input type={showLogin?'text':'password'} value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleUserLogin()}} placeholder="Password" className="flex-1 min-w-0 outline-none text-sm font-medium bg-transparent"/><button type="button" onClick={()=>setShowLogin(!showLogin)} aria-label="Password dikhao ya chhupao" className="ml-3 shrink-0 text-gray-500 hover:text-black"><EyeIcon open={showLogin}/></button></div>
    <div className="flex justify-center pt-2"><button onClick={handleUserLogin} disabled={busy} className="border-2 border-black rounded-full px-8 py-2.5 font-bold text-sm disabled:opacity-50">{busy?'Please wait...':'Login'}</button></div>
+   <p className="text-[10px] text-gray-400 text-center">Login par aap ki device ki maloomat aur location (browser ki ijazat se) record hoti hai</p>
   </div>
  </div>
 </div>
@@ -167,7 +209,7 @@ return(
 {tab==='live'&&(<div className="bg-white rounded-2xl border p-4 h-[75vh]"><h2 className="font-bold mb-3">Live Map - Route: Driver→A blue, A→B red</h2><iframe className="w-full h-full rounded-xl border" src="https://www.openstreetmap.org/export/embed.html?bbox=71.2%2C33.8%2C71.8%2C34.2&layer=mapnik"></iframe></div>)}
 {tab==='otp'&&(<div className="bg-white rounded-2xl border p-4 overflow-x-auto"><h2 className="font-bold mb-4">OTP Logs</h2><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Phone</th><th>OTP</th><th>Time</th></tr></thead><tbody>{otps.map((o:any)=><tr key={o.id} className="border-t"><td className="p-2 font-mono">{o.phone}</td><td className="p-2 font-bold">{o.otp}</td><td className="p-2 text-xs">{new Date(o.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>)}
 {tab==='settings'&&(
-<div className="bg-white rounded-2xl border p-6 max-w-4xl">
+<div className="bg-white rounded-2xl border p-6 max-w-6xl">
 <h2 className="font-bold text-xl">⚙️ Settings</h2>
 <div className="grid md:grid-cols-2 gap-6 mt-6">
 <div className="border-2 border-black rounded-2xl p-5">
@@ -183,9 +225,14 @@ return(
 <h3 className="font-bold">Created User IDs</h3>
 <div className="flex gap-2 text-xs"><span className="px-3 py-1 rounded-full bg-gray-100 font-bold">Total: {accounts.length}</span><span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-bold">Active: {accounts.filter(a=>!a.blocked).length}</span><span className="px-3 py-1 rounded-full bg-red-100 text-red-700 font-bold">Blocked: {accounts.filter(a=>a.blocked).length}</span></div>
 </div>
+{!tracking&&<p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">Activity record ke liye Supabase mein lib/admin_sessions.sql run karna baqi hai.</p>}
 {accounts.length===0?(<p className="text-sm text-gray-400">Abhi koi user ID nahi banai</p>):(
-<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Password</th><th className="p-3 text-left">Created</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
-{accounts.map((a,i)=><tr key={a.username} className="border-t"><td className="p-3 text-xs text-gray-500">{i+1}</td><td className="p-3 font-medium">{a.username}</td><td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{shown[a.username]!==undefined?shown[a.username]:'******'}</span><button onClick={()=>toggleShow(a.username)} className="text-gray-500 hover:text-black" title={shown[a.username]!==undefined?'Hide':'Show'}><EyeIcon open={shown[a.username]!==undefined}/></button></div></td><td className="p-3 text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${a.blocked?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{a.blocked?'Blocked':'Active'}</span></td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={()=>openEdit(a)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleAccount(a)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${a.blocked?'bg-blue-600':'bg-red-600'}`}>{a.blocked?'Unblock':'Block'}</button><button onClick={()=>deleteAccount(a.username)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td></tr>)}
+<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Username</th><th className="p-3 text-left">Password</th><th className="p-3 text-left">Created</th><th className="p-3 text-left">Activity</th><th className="p-3 text-left">Device</th><th className="p-3 text-left">Location</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+{accounts.map((a,i)=><tr key={a.username} className="border-t"><td className="p-3 text-xs text-gray-500">{i+1}</td><td className="p-3 font-medium">{a.username}</td><td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{shown[a.username]!==undefined?shown[a.username]:'******'}</span><button onClick={()=>toggleShow(a.username)} className="text-gray-500 hover:text-black" title={shown[a.username]!==undefined?'Hide':'Show'}><EyeIcon open={shown[a.username]!==undefined}/></button></div></td><td className="p-3 text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</td>
+<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><span className={`inline-flex items-center gap-1 font-bold ${a.activity.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${a.activity.online?'bg-green-500':'bg-gray-300'}`}></span>{a.activity.online?'Online':'Offline'}</span><p className="text-gray-500 mt-1">Login: {fmt(a.activity.login_at)}</p><p className="text-gray-500">{a.activity.online?'Abhi active hai':a.activity.logout_at?'Logout: '+fmt(a.activity.logout_at):'Last seen: '+fmt(a.activity.last_seen)}</p><button onClick={()=>openHistory(a.username)} className="text-blue-600 underline mt-1">History</button></>):<span className="text-gray-400">Abhi tak login nahi kiya</span>}</td>
+<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><p className="font-bold">{devIcon(a.activity.device_type)} {a.activity.device_type}{a.activity.device_model?' · '+a.activity.device_model:''}</p><p className="text-gray-500">{a.activity.os} {a.activity.os_version}</p><p className="text-gray-500">{a.activity.browser} {a.activity.browser_version}</p></>):<span className="text-gray-400">—</span>}</td>
+<td className="p-3 text-xs whitespace-nowrap">{a.activity?(<><p className="font-medium">{place(a.activity)}</p><p className="text-gray-400">{a.activity.ip||''}</p><button onClick={()=>openLive(a.username)} className="mt-1 px-2 py-1 rounded-lg bg-blue-600 text-white font-bold">📍 Location</button></>):<span className="text-gray-400">—</span>}</td>
+<td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${a.blocked?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{a.blocked?'Blocked':'Active'}</span></td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={()=>openEdit(a)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleAccount(a)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${a.blocked?'bg-blue-600':'bg-red-600'}`}>{a.blocked?'Unblock':'Block'}</button><button onClick={()=>deleteAccount(a.username)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td></tr>)}
 </tbody></table></div>)}
 </div>
 {modal && (
@@ -211,6 +258,45 @@ return(
  </div>
 </div>
 )}
+{hist && (
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={()=>setHist(null)}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-2xl max-h-[88vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <div className="flex justify-between items-start"><div><h3 className="text-xl font-bold">Login History</h3><p className="text-xs text-white/60 mt-1">{hist.username} · aakhri 20 logins</p></div><button onClick={()=>setHist(null)} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-sm">✕</button></div>
+  <div className="mt-5 space-y-3">
+   {hist.rows===null&&<p className="text-sm text-white/60">Load ho raha hai...</p>}
+   {hist.rows&&hist.rows.length===0&&<p className="text-sm text-white/60">Koi login record nahi</p>}
+   {hist.rows&&hist.rows.map((r:any,i:number)=>{const end=r.logout_at||r.last_seen; const c=coords(r); return(
+    <div key={i} className="rounded-2xl bg-white/10 border border-white/20 p-4 text-sm">
+     <div className="flex justify-between items-center flex-wrap gap-2"><span className={`text-xs font-bold px-2 py-1 rounded-full ${r.online?'bg-green-400/30 text-green-200':'bg-white/15 text-white/70'}`}>{r.online?'● Online':r.logout_at?'Logout kiya':'Offline'}</span><span className="text-xs text-white/60">{dur(r.login_at,end)}</span></div>
+     <p className="mt-2 font-semibold">{fmt(r.login_at)} <span className="text-white/50">→</span> {r.online?'abhi tak':fmt(end)}</p>
+     <p className="text-xs text-white/70 mt-1">{devIcon(r.device_type)} {r.device_type}{r.device_model?' · '+r.device_model:''} · {r.os} {r.os_version} · {r.browser} {r.browser_version}{r.screen?' · '+r.screen:''}</p>
+     <p className="text-xs text-white/70 mt-1">📍 {place(r)}{r.ip?' · '+r.ip:''}{c&&<> · <a className="underline text-blue-200" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${c.lat},${c.lon}`}>{c.gps?'GPS map':'Approx map'}</a></>}</p>
+    </div>)})}
+  </div>
+ </div>
+</div>
+)}
+{live && (()=>{ const s=live.s; const c=coords(s); const d=c&&c.gps?0.004:0.12; return(
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={()=>setLive(null)}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-2xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <div className="flex justify-between items-start"><div><h3 className="text-xl font-bold">Live Location</h3><p className="text-xs text-white/60 mt-1">{live.username}{s&&<> · <span className={s.online?'text-green-300 font-bold':'text-white/70'}>{s.online?'● Online':'Offline'}</span></>}</p></div><button onClick={()=>setLive(null)} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-sm">✕</button></div>
+  {!s?<p className="text-sm text-white/60 mt-5">Load ho raha hai...</p>:!c?<p className="text-sm text-white/70 mt-5">Is ID ki location abhi maloom nahi.</p>:(
+  <>
+   <div className="mt-4 rounded-2xl overflow-hidden border border-white/30 h-[300px] bg-white/10"><iframe key={c.lat+','+c.lon} className="w-full h-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${c.lon-d}%2C${c.lat-d}%2C${c.lon+d}%2C${c.lat+d}&layer=mapnik&marker=${c.lat}%2C${c.lon}`}></iframe></div>
+   <div className="mt-3 rounded-2xl bg-white/10 border border-white/20 p-4 text-sm space-y-1">
+    <p><b>{c.gps?'GPS location (exact)':'Approx location (IP se, sirf shehar ke qareeb)'}</b></p>
+    {c.gps&&<p className="text-xs text-white/70">Sahi-pan: ±{Math.round(s.gps_accuracy||0)} meter · Update: {ago(s.gps_at)}</p>}
+    {!c.gps&&s.gps_status==='denied'&&<p className="text-xs text-amber-200">User ne browser mein location ki ijazat band ki hui hai.</p>}
+    {!c.gps&&s.gps_status==='unavailable'&&<p className="text-xs text-amber-200">Is device par GPS location available nahi.</p>}
+    {!c.gps&&(s.gps_status==='pending'||!s.gps_status)&&<p className="text-xs text-white/70">GPS ka intezar hai (user ki ijazat ya signal).</p>}
+    <p className="text-xs text-white/70">📍 {place(s)}{s.ip?' · IP '+s.ip:''}</p>
+    {!s.online&&<p className="text-xs text-amber-200">User abhi offline hai, aakhri maloom location dikha rahe hain ({ago(s.last_seen)}).</p>}
+    <p className="text-xs text-white/50">Har 10 second mein khud update hoti hai (jab tak user ka page khula ho).</p>
+    <a className="inline-block mt-2 text-xs font-bold underline text-blue-200" target="_blank" rel="noreferrer" href={`https://www.google.com/maps?q=${c.lat},${c.lon}`}>Google Maps mein kholen</a>
+   </div>
+  </>)}
+ </div>
+</div>)})()}
 </>)}
 </div>
 )}
