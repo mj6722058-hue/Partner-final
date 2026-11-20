@@ -10,6 +10,7 @@ const [isLogin,setIsLogin]=useState(false)
 const [checked,setChecked]=useState(false)
 const [role,setRole]=useState('')
 const [busy,setBusy]=useState(false)
+const [showLogin,setShowLogin]=useState(false)
 const [tab,setTab]=useState('dashboard')
 const [users,setUsers]=useState<any[]>([])
 const [otps,setOtps]=useState<any[]>([])
@@ -105,6 +106,7 @@ const filtered=users.filter((u:any)=>(u.name||'').toLowerCase().includes(q.toLow
 const getActiveRide=(user:any)=> rides.find((r:any)=>(r.passenger_phone===user.phone || r.driver_phone===user.phone) && r.status!=='completed' && r.status!=='cancelled') || null
 const getUserRides=(user:any)=> rides.filter((r:any)=>r.passenger_phone===user.phone || r.driver_phone===user.phone)
 
+const tabList=[['dashboard','📊 Dashboard'],['drivers','🚗 Drivers'],['passengers','👤 Passengers'],['live','🗺️ Live Map'],['otp','🔑 OTP Logs'],['docs','📄 Documents'],['settings','⚙️ Settings']]
 if(!checked) return <div className="min-h-screen bg-[#f2f3f8]"/>
 if(!isLogin){
 return(
@@ -114,7 +116,7 @@ return(
   <div className="space-y-4">
    <div className="border-2 border-black rounded-full px-6 py-3 text-center"><p className="font-bold text-sm">Admin login</p></div>
    <div className="border-2 border-black rounded-full px-6 py-4"><input value={adminUser} onChange={e=>setAdminUser(e.target.value)} placeholder="User name" className="w-full outline-none text-sm font-medium bg-transparent"/></div>
-   <div className="border-2 border-black rounded-full px-6 py-4"><input type="password" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleUserLogin()}} placeholder="Password" className="w-full outline-none text-sm font-medium bg-transparent"/></div>
+   <div className="border-2 border-black rounded-full pl-6 pr-5 py-4 flex items-center"><input type={showLogin?'text':'password'} value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleUserLogin()}} placeholder="Password" className="flex-1 min-w-0 outline-none text-sm font-medium bg-transparent"/><button type="button" onClick={()=>setShowLogin(!showLogin)} aria-label="Password dikhao ya chhupao" className="ml-3 shrink-0 text-gray-500 hover:text-black"><EyeIcon open={showLogin}/></button></div>
    <div className="flex justify-center pt-2"><button onClick={handleUserLogin} disabled={busy} className="border-2 border-black rounded-full px-8 py-2.5 font-bold text-sm disabled:opacity-50">{busy?'Please wait...':'Login'}</button></div>
   </div>
  </div>
@@ -127,15 +129,16 @@ return(
 <div className="min-h-screen bg-[#f5f6fb] flex">
 <div className="w-[240px] bg-[#0f1220] text-white p-4 hidden md:flex flex-col fixed h-full z-20">
  <div className="flex items-center gap-2 mb-8"><div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center">📍</div><b className="text-xl">Patner</b></div>
- {[
-  ['dashboard','📊 Dashboard'],['drivers','🚗 Drivers'],['passengers','👤 Passengers'],['live','🗺️ Live Map'],['otp','🔑 OTP Logs'],['docs','📄 Documents'],['settings','⚙️ Settings']
- ].map(([k,l])=>(
+ {tabList.map(([k,l])=>(
   <button key={k} onClick={()=>setTab(k)} className={`text-left px-4 py-3 rounded-xl mb-1 text-sm ${tab===k?'bg-[#2d5bff]':'text-gray-400 hover:text-white'}`}>{l}</button>
  ))}
  <div className="mt-auto pt-6 border-t border-white/10 text-xs"><p>Admin</p><button onClick={handleLogout} className="text-red-400 mt-2">Logout</button></div>
 </div>
 <div className="flex-1 md:ml-[240px]">
-<div className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10"><h1 className="font-bold text-xl">Dashboard Overview</h1></div>
+<div className="bg-white border-b sticky top-0 z-10">
+<div className="px-6 py-4 flex justify-between items-center"><h1 className="font-bold text-xl">Dashboard Overview</h1><button onClick={handleLogout} className="md:hidden text-xs font-bold text-red-500 border border-red-200 rounded-full px-3 py-1">Logout</button></div>
+<div className="md:hidden flex gap-2 overflow-x-auto px-4 pb-3">{tabList.map(([k,l])=>(<button key={k} onClick={()=>setTab(k)} className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-xs font-medium ${tab===k?'bg-[#2d5bff] text-white':'bg-gray-100 text-gray-600'}`}>{l}</button>))}</div>
+</div>
 <div className="p-4 md:p-6">
 {tab==='dashboard'&&(
 <>
@@ -152,9 +155,9 @@ return(
 </div>
 </>
 )}
-{tab==='drivers'&&(<div className="bg-white rounded-2xl border p-4"><div className="flex justify-between mb-4"><h2 className="font-bold">All Drivers - Click for route map</h2><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border rounded-full px-4 py-1.5 text-sm"/></div><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Driver</th><th>Rides</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.filter((u:any)=>u.is_driver).map((u:any)=><tr key={u.id} className="border-t hover:bg-gray-50"><td className="p-3 cursor-pointer" onClick={()=>openDetails(u,'driver')}><p className="font-medium">{u.name}</p><p className="text-xs text-gray-500">{u.phone}</p></td><td className="p-3 text-center text-xs">{getUserRides(u).length} ⭐ {u.rating||'4.8'}</td><td className="p-3 text-center"><span className="px-2 py-1 rounded-full text-xs bg-green-100">{u.status}</span></td><td className="p-3 text-center"><button onClick={()=>toggle(u)} className="px-3 py-1 rounded-lg text-xs border">Block</button></td></tr>)}</tbody></table></div>)}
+{tab==='drivers'&&(<div className="bg-white rounded-2xl border p-4 overflow-x-auto"><div className="flex justify-between mb-4"><h2 className="font-bold">All Drivers - Click for route map</h2><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search" className="border rounded-full px-4 py-1.5 text-sm"/></div><table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Driver</th><th>Rides</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.filter((u:any)=>u.is_driver).map((u:any)=><tr key={u.id} className="border-t hover:bg-gray-50"><td className="p-3 cursor-pointer" onClick={()=>openDetails(u,'driver')}><p className="font-medium">{u.name}</p><p className="text-xs text-gray-500">{u.phone}</p></td><td className="p-3 text-center text-xs">{getUserRides(u).length} ⭐ {u.rating||'4.8'}</td><td className="p-3 text-center"><span className="px-2 py-1 rounded-full text-xs bg-green-100">{u.status}</span></td><td className="p-3 text-center"><button onClick={()=>toggle(u)} className="px-3 py-1 rounded-lg text-xs border">Block</button></td></tr>)}</tbody></table></div>)}
 {tab==='passengers'&&(
-<div className="bg-white rounded-2xl border p-4">
+<div className="bg-white rounded-2xl border p-4 overflow-x-auto">
 <h2 className="font-bold mb-4">All Passengers - Click for selfie, ID, location, route - Total: {filtered.filter((u:any)=>!u.is_driver).length || filtered.length}</h2>
 <table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Passenger</th><th>Location</th><th>Rides</th><th>Current Ride</th><th>Action</th></tr></thead><tbody>
 {(filtered.filter((u:any)=>!u.is_driver).length>0? filtered.filter((u:any)=>!u.is_driver) : filtered).map((u:any)=><tr key={u.id} className="border-t hover:bg-gray-50"><td className="p-3 cursor-pointer" onClick={()=>openDetails(u,'passenger')}><div className="flex gap-2 items-center"><div className="w-8 h-8 bg-gray-200 rounded-full overflow-hidden">{u.selfie? <img src={u.selfie} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-[10px]">👤</div>}</div><div><p className="font-medium">{u.name||'Passenger'}</p><p className="text-xs text-gray-500">{u.phone}</p></div></div></td><td className="p-3 text-xs text-center">{u.current_lat?Number(u.current_lat).toFixed(4):'No loc'}</td><td className="p-3 text-center text-xs">{getUserRides(u).length} rides</td><td className="p-3 text-xs text-center">{getActiveRide(u)? <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[10px]">{getActiveRide(u).from_location} → {getActiveRide(u).to_location}</span> : <span className="text-gray-400">No ride</span>}</td><td className="p-3 text-center"><button onClick={()=>openDetails(u,'passenger')} className="text-blue-600 text-xs underline">View</button></td></tr>)}
@@ -162,7 +165,7 @@ return(
 </div>
 )}
 {tab==='live'&&(<div className="bg-white rounded-2xl border p-4 h-[75vh]"><h2 className="font-bold mb-3">Live Map - Route: Driver→A blue, A→B red</h2><iframe className="w-full h-full rounded-xl border" src="https://www.openstreetmap.org/export/embed.html?bbox=71.2%2C33.8%2C71.8%2C34.2&layer=mapnik"></iframe></div>)}
-{tab==='otp'&&(<div className="bg-white rounded-2xl border p-4"><h2 className="font-bold mb-4">OTP Logs</h2><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Phone</th><th>OTP</th><th>Time</th></tr></thead><tbody>{otps.map((o:any)=><tr key={o.id} className="border-t"><td className="p-2 font-mono">{o.phone}</td><td className="p-2 font-bold">{o.otp}</td><td className="p-2 text-xs">{new Date(o.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>)}
+{tab==='otp'&&(<div className="bg-white rounded-2xl border p-4 overflow-x-auto"><h2 className="font-bold mb-4">OTP Logs</h2><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Phone</th><th>OTP</th><th>Time</th></tr></thead><tbody>{otps.map((o:any)=><tr key={o.id} className="border-t"><td className="p-2 font-mono">{o.phone}</td><td className="p-2 font-bold">{o.otp}</td><td className="p-2 text-xs">{new Date(o.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>)}
 {tab==='settings'&&(
 <div className="bg-white rounded-2xl border p-6 max-w-4xl">
 <h2 className="font-bold text-xl">⚙️ Settings</h2>
@@ -197,9 +200,9 @@ return(
   <label className="text-xs font-semibold mt-6 block text-white/80">Username</label>
   <input value={fUser} onChange={e=>setFUser(e.target.value)} placeholder="Username" className="w-full bg-white/10 border border-white/30 focus:border-white/70 focus:bg-white/20 rounded-full px-5 py-3 mt-1.5 text-sm text-white placeholder-white/40 outline-none"/>
   <label className="text-xs font-semibold mt-4 block text-white/80">Password</label>
-  <div className="relative"><input value={fPass} onChange={e=>setFPass(e.target.value)} type={showP?'text':'password'} placeholder={modal==='edit'?'Naya password (khali = purana)':'Password'} className="w-full bg-white/10 border border-white/30 focus:border-white/70 focus:bg-white/20 rounded-full pl-5 pr-12 py-3 mt-1.5 text-sm text-white placeholder-white/40 outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="absolute right-4 top-[calc(50%+3px)] -translate-y-1/2 text-white/70 hover:text-white"><EyeIcon open={showP}/></button></div>
+  <div className="flex items-center mt-1.5 bg-white/10 border border-white/30 focus-within:border-white/70 focus-within:bg-white/20 rounded-full pl-5 pr-4 py-3"><input value={fPass} onChange={e=>setFPass(e.target.value)} type={showP?'text':'password'} autoComplete="new-password" placeholder={modal==='edit'?'Naya password (khali = purana)':'Password'} className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder-white/40 outline-none"/><button type="button" onClick={()=>setShowP(!showP)} aria-label="Password dikhao ya chhupao" className="ml-3 shrink-0 text-white/70 hover:text-white"><EyeIcon open={showP}/></button></div>
   <label className="text-xs font-semibold mt-4 block text-white/80">Confirm Password</label>
-  <div className="relative"><input value={fConf} onChange={e=>setFConf(e.target.value)} type={showC?'text':'password'} placeholder="Confirm password" className="w-full bg-white/10 border border-white/30 focus:border-white/70 focus:bg-white/20 rounded-full pl-5 pr-12 py-3 mt-1.5 text-sm text-white placeholder-white/40 outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="absolute right-4 top-[calc(50%+3px)] -translate-y-1/2 text-white/70 hover:text-white"><EyeIcon open={showC}/></button></div>
+  <div className="flex items-center mt-1.5 bg-white/10 border border-white/30 focus-within:border-white/70 focus-within:bg-white/20 rounded-full pl-5 pr-4 py-3"><input value={fConf} onChange={e=>setFConf(e.target.value)} type={showC?'text':'password'} autoComplete="new-password" placeholder="Confirm password" className="flex-1 min-w-0 bg-transparent text-sm text-white placeholder-white/40 outline-none"/><button type="button" onClick={()=>setShowC(!showC)} aria-label="Confirm password dikhao ya chhupao" className="ml-3 shrink-0 text-white/70 hover:text-white"><EyeIcon open={showC}/></button></div>
   {formErr && <p className="text-xs text-red-300 bg-red-500/20 border border-red-300/30 rounded-xl px-3 py-2 mt-4">{formErr}</p>}
   <div className="flex gap-3 mt-6">
    <button onClick={()=>setModal(null)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 hover:bg-white/20 border border-white/30">Cancel</button>
