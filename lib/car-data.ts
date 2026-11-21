@@ -1,0 +1,26 @@
+// A reasonably broad list of car makes + common models. Not exhaustive — easy to extend.
+export const CAR_DATA: Record<string, string[]> = {
+  'Toyota': ['Corolla', 'Yaris', 'Camry', 'Hilux', 'Fortuner', 'Land Cruiser', 'Prado', 'Vitz', 'Aqua', 'Passo', 'Prius', 'Raize'],
+  'Honda': ['Civic', 'City', 'Accord', 'BR-V', 'HR-V', 'CR-V', 'Vezel', 'Fit'],
+  'Suzuki': ['Mehran', 'Alto', 'Cultus', 'Swift', 'Wagon R', 'Bolan', 'Ravi', 'Vitara', 'Baleno', 'Ciaz'],
+  'Hyundai': ['Elantra', 'Tucson', 'Sonata', 'Santa Fe', 'Accent', 'Creta', 'i10', 'i20'],
+  'Kia': ['Sportage', 'Picanto', 'Stonic', 'Sorento', 'Carnival', 'Cerato'],
+  'Nissan': ['Sunny', 'Dayz', 'X-Trail', 'Note', 'Altima', 'Patrol'],
+  'Mitsubishi': ['Lancer', 'Pajero', 'Mirage', 'Outlander', 'Montero'],
+  'Daihatsu': ['Mira', 'Cuore', 'Move', 'Hijet'],
+  'Changan': ['Alsvin', 'Karvaan', 'Oshan X7'],
+  'MG': ['HS', 'ZS', 'MG5', 'MG6'],
+  'Proton': ['Saga', 'X70', 'Persona'],
+  'BMW': ['3 Series', '5 Series', 'X1', 'X3', 'X5', '7 Series'],
+  'Mercedes-Benz': ['C-Class', 'E-Class', 'S-Class', 'GLA', 'GLC'],
+  'Audi': ['A3', 'A4', 'A6', 'Q3', 'Q5'],
+  'Volkswagen': ['Golf', 'Passat', 'Tiguan', 'Polo'],
+  'Ford': ['Figo', 'Focus', 'EcoSport', 'Ranger'],
+  'Chevrolet': ['Spark', 'Cruze', 'Aveo'],
+  'Daewoo': ['Corolla', 'Racer'],
+  'FAW': ['V2', 'X-PV'],
+  'Lexus': ['IS', 'ES', 'RX', 'NX'],
+  'Tesla': ['Model 3', 'Model Y', 'Model S', 'Model X'],
+  'Other': ['Other'],
+}
+export const CAR_COMPANIES = Object.keys(CAR_DATA)
