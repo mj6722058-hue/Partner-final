@@ -60,6 +60,19 @@ const [drvEditId,setDrvEditId]=useState('')
 const [drvShown,setDrvShown]=useState<Record<string,string>>({})
 const [drvPreview,setDrvPreview]=useState<Record<string,string>>({})
 const [drvDone,setDrvDone]=useState(false)
+// ---- passengers ----
+const [passengers,setPassengers]=useState<any[]>([])
+const [psgSearch,setPsgSearch]=useState('')
+const [psgFilter,setPsgFilter]=useState<'all'|'active'|'blocked'>('all')
+const [psgWiz,setPsgWiz]=useState(false)
+const [psgStep,setPsgStep]=useState(1)
+const [psgForm,setPsgForm]=useState(()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''}))
+const [psgErr,setPsgErr]=useState('')
+const [psgOtp,setPsgOtp]=useState('')
+const [psgDevOtp,setPsgDevOtp]=useState('')
+const [psgBusy,setPsgBusy]=useState(false)
+const [psgEditId,setPsgEditId]=useState('')
+const [psgShown,setPsgShown]=useState<Record<string,string>>({})
 const [editing,setEditing]=useState('')
 const [fUser,setFUser]=useState('')
 const [fPass,setFPass]=useState('')
@@ -202,6 +215,74 @@ const ImgBox=({label,field,folder}:{label:string,field:string,folder:string})=>{
   <div className="mt-1.5 relative h-28 rounded-xl border border-white/30 bg-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15">
    {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:<span className="text-white/50 text-xs">+ Tasveer lagayen</span>}
    <input type="file" accept="image/*" onChange={pickImage(field,folder)} className="absolute inset-0 opacity-0 cursor-pointer"/>
+  </div>
+ </label>)
+}
+
+const emptyPsgForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''})
+const loadPassengers=async()=>{const p=new URLSearchParams(); if(psgSearch.trim()) p.set('search',psgSearch.trim()); if(psgFilter!=='all') p.set('status',psgFilter); const r=await api('/api/admin/passengers?'+p.toString()); if(r.ok) setPassengers(r.data.passengers||[])}
+useEffect(()=>{if(isLogin&&tab==='passengers'){const t=setTimeout(loadPassengers,250); return()=>clearTimeout(t)}},[isLogin,tab,psgSearch,psgFilter])
+const pickPsgImage=(field:string)=>async(e:any)=>{
+ const file=e.target.files?.[0]; if(!file) return
+ try{
+  const dataUrl=await compress(file)
+  setPsgErr(''); setPsgBusy(true)
+  const path=await uploadImg(dataUrl,'passengers')
+  setPsgForm((f:any)=>({...f,[field]:path})); setDrvPreview(p=>({...p,[path]:dataUrl}))
+ }catch(err:any){setPsgErr(err.message||'Tasveer upload nahi hui')}
+ setPsgBusy(false); e.target.value=''
+}
+const openPsgWizard=()=>{setPsgForm(emptyPsgForm()); setPsgEditId(''); setPsgStep(1); setPsgErr(''); setPsgOtp(''); setPsgDevOtp(''); setPsgWiz(true)}
+const psgStep1Ok=()=>psgForm.firstName.trim()&&psgForm.lastName.trim()&&psgForm.username.trim().length>=3&&psgForm.password.length>=8&&psgForm.password===psgForm.confirm
+const sendPsgOtp=async()=>{
+ setPsgErr('')
+ if(!psgStep1Ok()){setPsgErr('Pehla/aakhri naam, username, password (kam az kam 8) aur confirm password theek bharein'); return}
+ if(psgForm.phone.replace(/\D/g,'').length<6){setPsgErr('Phone number likhein'); return}
+ setPsgBusy(true)
+ const r=await api('/api/admin/passengers/otp','POST',{countryCode:psgForm.countryCode,phone:psgForm.phone})
+ setPsgBusy(false)
+ if(!r.ok){setPsgErr(r.data.error||'OTP nahi bheja ja saka'); return}
+ setPsgDevOtp(r.data.devCode||''); setPsgStep(3)
+}
+const submitPsg=async()=>{
+ if(!/^\d{6}$/.test(psgOtp)){setPsgErr('6 digit OTP likhein'); return}
+ setPsgErr(''); setPsgBusy(true)
+ const r=await api('/api/admin/passengers','POST',{
+  firstName:psgForm.firstName,lastName:psgForm.lastName,gender:psgForm.gender,
+  countryCode:psgForm.countryCode,phone:psgForm.phone,username:psgForm.username,password:psgForm.password,
+  selfieUrl:psgForm.selfieUrl,idFrontUrl:psgForm.idFrontUrl,idBackUrl:psgForm.idBackUrl,otp:psgOtp,
+ })
+ setPsgBusy(false)
+ if(!r.ok){setPsgErr(r.data.error||'Registration nahi ho saki'); return}
+ setPsgStep(4); loadPassengers()
+}
+const togglePsg=async(d:any)=>{const r=await api('/api/admin/passengers','PATCH',{id:d.id,status:d.status==='blocked'?'active':'blocked'}); if(!r.ok) alert(r.data.error||'Update nahi hua'); loadPassengers()}
+const deletePsg=async(d:any)=>{if(!confirm('"'+d.first_name+' '+d.last_name+'" ki ID delete karni hai?')) return; const r=await api('/api/admin/passengers','DELETE',{id:d.id}); if(!r.ok) alert(r.data.error||'Delete nahi hui'); loadPassengers()}
+const togglePsgPass=async(d:any)=>{if(psgShown[d.username]!==undefined){const n={...psgShown}; delete n[d.username]; setPsgShown(n); return} const r=await api('/api/admin/passengers?reveal='+encodeURIComponent(d.username)); if(r.ok) setPsgShown(s=>({...s,[d.username]:r.data.password||''}))}
+const openEditPsg=(d:any)=>{
+ setPsgEditId(d.id)
+ setPsgForm({firstName:d.first_name,lastName:d.last_name,gender:d.gender,countryCode:d.country_code,phone:d.phone,username:d.username,password:'',confirm:'',
+  selfieUrl:d.selfie_url||'',idFrontUrl:d.id_front_url||'',idBackUrl:d.id_back_url||''})
+ setPsgErr(''); setPsgWiz(true); setPsgStep(0)
+}
+const savePsgEdit=async()=>{
+ if(!psgForm.firstName.trim()||!psgForm.lastName.trim()){setPsgErr('Naam likhein'); return}
+ if(psgForm.password && psgForm.password.length<8){setPsgErr('Naya password kam az kam 8 characters ka ho'); return}
+ if(psgForm.password && psgForm.password!==psgForm.confirm){setPsgErr('Password match nahi karta'); return}
+ setPsgErr(''); setPsgBusy(true)
+ const r=await api('/api/admin/passengers','PATCH',{id:psgEditId,firstName:psgForm.firstName,lastName:psgForm.lastName,gender:psgForm.gender,
+  newPassword:psgForm.password||undefined,selfieUrl:psgForm.selfieUrl,idFrontUrl:psgForm.idFrontUrl,idBackUrl:psgForm.idBackUrl})
+ setPsgBusy(false)
+ if(!r.ok){setPsgErr(r.data.error||'Save nahi hua'); return}
+ setPsgWiz(false); setPsgEditId(''); loadPassengers()
+}
+const PsgImgBox=({label,field}:{label:string,field:string})=>{
+ const path=(psgForm as any)[field] as string
+ return(<label className="block">
+  <span className="text-xs font-semibold text-white/80">{label}</span>
+  <div className="mt-1.5 relative h-28 rounded-xl border border-white/30 bg-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15">
+   {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:<span className="text-white/50 text-xs">+ Tasveer lagayen</span>}
+   <input type="file" accept="image/*" onChange={pickPsgImage(field)} className="absolute inset-0 opacity-0 cursor-pointer"/>
   </div>
  </label>)
 }
@@ -354,14 +435,29 @@ return(
 {drivers.length===0&&<p className="text-sm text-gray-400 p-4 text-center">Koi driver nahi mila</p>}
 <p className="text-[11px] text-gray-400 mt-3">Online status, live location aur ride ka route driver app se connect hone ke baad yahan dikhega — abhi sirf ID, images aur car ki maloomat yahan save hoti hai.</p>
 </div>)}
-{tab==='passengers'&&(
-<div className="bg-white rounded-2xl border p-4 overflow-x-auto">
-<h2 className="font-bold mb-4">All Passengers - Click for selfie, ID, location, route - Total: {filtered.filter((u:any)=>!u.is_driver).length || filtered.length}</h2>
-<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">Passenger</th><th>Location</th><th>Rides</th><th>Current Ride</th><th>Action</th></tr></thead><tbody>
-{(filtered.filter((u:any)=>!u.is_driver).length>0? filtered.filter((u:any)=>!u.is_driver) : filtered).map((u:any)=><tr key={u.id} className="border-t hover:bg-gray-50"><td className="p-3 cursor-pointer" onClick={()=>openDetails(u,'passenger')}><div className="flex gap-2 items-center"><div className="w-8 h-8 bg-gray-200 rounded-full overflow-hidden">{u.selfie? <img src={u.selfie} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-[10px]">👤</div>}</div><div><p className="font-medium">{u.name||'Passenger'}</p><p className="text-xs text-gray-500">{u.phone}</p></div></div></td><td className="p-3 text-xs text-center">{u.current_lat?Number(u.current_lat).toFixed(4):'No loc'}</td><td className="p-3 text-center text-xs">{getUserRides(u).length} rides</td><td className="p-3 text-xs text-center">{getActiveRide(u)? <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-[10px]">{getActiveRide(u).from_location} → {getActiveRide(u).to_location}</span> : <span className="text-gray-400">No ride</span>}</td><td className="p-3 text-center"><button onClick={()=>openDetails(u,'passenger')} className="text-blue-600 text-xs underline">View</button></td></tr>)}
-</tbody></table>
+{tab==='passengers'&&(<div className="bg-white rounded-2xl border p-4 overflow-x-auto">
+<div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+ <h2 className="font-bold">Passengers</h2>
+ <div className="flex flex-wrap gap-2 items-center">
+  <input value={psgSearch} onChange={e=>setPsgSearch(e.target.value)} placeholder="List # ya phone se search karein" className="border rounded-full px-4 py-1.5 text-sm w-56"/>
+  <select value={psgFilter} onChange={e=>setPsgFilter(e.target.value as any)} className="border rounded-full px-3 py-1.5 text-sm"><option value="all">Sab</option><option value="active">Active</option><option value="blocked">Blocked</option></select>
+  <button onClick={openPsgWizard} className="bg-black text-white px-4 py-2 rounded-full text-sm font-bold">＋ Create New ID</button>
+ </div>
 </div>
-)}
+<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Passenger</th><th className="p-3 text-left">Phone</th><th className="p-3 text-left">Password</th><th className="p-3 text-center">Rating</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+{passengers.map((d:any)=><tr key={d.id} className="border-t hover:bg-gray-50 align-top">
+ <td className="p-3 text-xs text-gray-500">{d.list_no}</td>
+ <td className="p-3"><div className="flex gap-2 items-center"><div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shrink-0">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-xs">👤</div>}</div><div><p className="font-medium">{d.first_name} {d.last_name}</p><p className="text-xs text-gray-500">{d.gender==='male'?'Male':'Female'}</p></div></div></td>
+ <td className="p-3 text-xs">{d.country_code} {d.phone}</td>
+ <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{psgShown[d.username]!==undefined?psgShown[d.username]:'******'}</span><button onClick={()=>togglePsgPass(d)} className="text-gray-500 hover:text-black"><EyeIcon open={psgShown[d.username]!==undefined}/></button></div></td>
+ <td className="p-3 text-center text-xs">⭐ {d.rating||0} <span className="text-gray-400">({d.rating_count||0})</span></td>
+ <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span></td>
+ <td className="p-3"><div className="flex gap-2 justify-center flex-wrap"><button onClick={()=>openEditPsg(d)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>togglePsg(d)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button><button onClick={()=>deletePsg(d)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td>
+</tr>)}
+</tbody></table>
+{passengers.length===0&&<p className="text-sm text-gray-400 p-4 text-center">Koi passenger nahi mila</p>}
+<p className="text-[11px] text-gray-400 mt-3">Login history, live location aur driver comments passenger app se connect hone ke baad yahan dikhenge.</p>
+</div>)}
 {tab==='live'&&(<div className="bg-white rounded-2xl border p-4 h-[75vh]"><h2 className="font-bold mb-3">Live Map - Route: Driver→A blue, A→B red</h2><iframe className="w-full h-full rounded-xl border" src="https://www.openstreetmap.org/export/embed.html?bbox=71.2%2C33.8%2C71.8%2C34.2&layer=mapnik"></iframe></div>)}
 {tab==='otp'&&(<div className="bg-white rounded-2xl border p-4 overflow-x-auto"><h2 className="font-bold mb-4">OTP Logs</h2><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Phone</th><th>OTP</th><th>Time</th></tr></thead><tbody>{otps.map((o:any)=><tr key={o.id} className="border-t"><td className="p-2 font-mono">{o.phone}</td><td className="p-2 font-bold">{o.otp}</td><td className="p-2 text-xs">{new Date(o.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>)}
 {tab==='settings'&&(
@@ -552,6 +648,75 @@ return(
      <input value={drvOtp} onChange={e=>setDrvOtp(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6 digit OTP" className="w-full mt-4 bg-white/10 border border-white/30 rounded-full px-4 py-3 text-center tracking-[0.5em] text-lg outline-none placeholder-white/40"/>
     </div>
     <div className="flex gap-3 mt-6"><button onClick={()=>setDrvStep(3)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={submitDriver} disabled={drvBusy} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500 disabled:opacity-50">{drvBusy?'Please wait...':'Verify aur Register'}</button></div>
+   </>)}
+  </>)}
+ </div>
+</div>
+)}
+
+{psgWiz && (
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={()=>{if(psgBusy) return; setPsgWiz(false); setPsgEditId('')}}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <div className="flex justify-between items-start">
+   <div><h3 className="text-xl font-bold">{psgEditId?'Passenger ki ID edit karein':psgStep===4?'Mubarak ho! 🎉':'Create New Passenger ID'}</h3><p className="text-xs text-white/60 mt-1">{psgEditId?psgForm.firstName+' '+psgForm.lastName:psgStep<4?'Step '+psgStep+' of 3':'Registration mukammal ho gayi'}</p></div>
+   <button onClick={()=>{setPsgWiz(false); setPsgEditId('')}} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-sm">✕</button>
+  </div>
+  {psgErr&&<p className="text-xs text-red-300 bg-red-500/20 border border-red-300/30 rounded-xl px-3 py-2 mt-4">{psgErr}</p>}
+
+  {psgEditId?(<>
+   <div className="grid sm:grid-cols-2 gap-3 mt-5">
+    <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+    <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+   </div>
+   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
+   <div className="grid sm:grid-cols-2 gap-3 mt-3">
+    <label className="block"><span className="text-xs font-semibold text-white/80">Naya Password (khali = purana)</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
+    <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
+   </div>
+   <p className="text-xs font-bold mt-5">Tasveerein</p>
+   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
+    <PsgImgBox label="Selfie" field="selfieUrl"/>
+    <PsgImgBox label="ID Card (Front)" field="idFrontUrl"/>
+    <PsgImgBox label="ID Card (Back)" field="idBackUrl"/>
+   </div>
+   <button onClick={savePsgEdit} disabled={psgBusy} className="w-full mt-6 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500 disabled:opacity-50">{psgBusy?'Please wait...':'Save Changes'}</button>
+  </>):psgStep===4?(<>
+   <div className="mt-6 text-center py-6"><p className="text-5xl">🎉</p><p className="mt-4 font-bold">Sahi OTP milne par registration mukammal ho gayi hai, mubarak ho!</p><p className="text-xs text-white/60 mt-2">List # mil gaya hai, passenger ab list mein nazar aa raha hai.</p></div>
+   <button onClick={()=>setPsgWiz(false)} className="w-full py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Theek hai</button>
+  </>):(<>
+   {psgStep===1&&(<>
+    <div className="grid sm:grid-cols-2 gap-3 mt-5">
+     <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+     <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+    </div>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Username</span><input value={psgForm.username} onChange={e=>setPsgForm((f:any)=>({...f,username:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+    <div className="grid sm:grid-cols-2 gap-3 mt-3">
+     <label className="block"><span className="text-xs font-semibold text-white/80">Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
+     <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
+    </div>
+    <p className="text-xs font-bold mt-5">Phone Number</p>
+    <div className="flex gap-2 mt-2">
+     <select value={psgForm.countryCode} onChange={e=>setPsgForm((f:any)=>({...f,countryCode:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-3 py-2.5 text-sm outline-none w-32">{COUNTRIES.map(c=><option key={c.iso2} className="text-black" value={c.dial}>{flagEmoji(c.iso2)} {c.dial}</option>)}</select>
+     <input value={psgForm.phone} onChange={e=>setPsgForm((f:any)=>({...f,phone:e.target.value.replace(/\D/g,'')}))} placeholder="3001234567" className="flex-1 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+    </div>
+    <button onClick={()=>{if(!psgStep1Ok()){setPsgErr('Sab fields theek bharen, password kam az kam 8 characters aur confirm se match ho'); return} setPsgErr(''); setPsgStep(2)}} className="w-full mt-6 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Agay Barhein</button>
+   </>)}
+   {psgStep===2&&(<>
+    <p className="text-xs font-bold mt-5">Tasveerein</p>
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
+     <PsgImgBox label="Selfie" field="selfieUrl"/>
+     <PsgImgBox label="ID Card (Front)" field="idFrontUrl"/>
+     <PsgImgBox label="ID Card (Back)" field="idBackUrl"/>
+    </div>
+    <div className="flex gap-3 mt-6"><button onClick={()=>setPsgStep(1)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={sendPsgOtp} disabled={psgBusy} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500 disabled:opacity-50">{psgBusy?'Please wait...':'OTP Bhejein'}</button></div>
+   </>)}
+   {psgStep===3&&(<>
+    <div className="mt-6"><p className="text-sm text-white/80">{psgForm.countryCode}{psgForm.phone} par OTP bheja gaya hai.</p>
+     {psgDevOtp&&<p className="text-xs text-amber-200 bg-amber-500/10 border border-amber-300/30 rounded-xl px-3 py-2 mt-2">SMS account abhi connect nahi hai, isliye test OTP yahan dikhaya ja raha hai: <b>{psgDevOtp}</b></p>}
+     <input value={psgOtp} onChange={e=>setPsgOtp(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6 digit OTP" className="w-full mt-4 bg-white/10 border border-white/30 rounded-full px-4 py-3 text-center tracking-[0.5em] text-lg outline-none placeholder-white/40"/>
+    </div>
+    <div className="flex gap-3 mt-6"><button onClick={()=>setPsgStep(2)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={submitPsg} disabled={psgBusy} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500 disabled:opacity-50">{psgBusy?'Please wait...':'Verify aur Register'}</button></div>
    </>)}
   </>)}
  </div>
