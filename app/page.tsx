@@ -11,6 +11,7 @@ const fmt=(t?:string|null)=>t?new Date(t).toLocaleString([],{day:'numeric',month
 const ago=(t?:string|null)=>{if(!t) return ''; const x=Math.max(0,Math.round((Date.now()-new Date(t).getTime())/1000)); return x<60?x+' sec pehle':x<3600?Math.round(x/60)+' min pehle':Math.round(x/3600)+' ghante pehle'}
 const dur=(a?:string|null,b?:string|null)=>{if(!a||!b) return ''; const m=Math.max(0,Math.round((new Date(b).getTime()-new Date(a).getTime())/60000)); return m<60?m+' min':Math.floor(m/60)+' ghante '+(m%60)+' min'}
 const place=(a:any)=>[a?.city,a?.region,a?.country].filter(Boolean).join(', ')||'Maloom nahi'
+const genderLabel=(g?:string)=>g==='male'?'Male':g==='female'?'Female':'Other'
 const devIcon=(t?:string)=>t==='Mobile'?'📱':t==='Tablet'?'📲':'💻'
 const compress=(file:File):Promise<string>=>new Promise((resolve,reject)=>{
  const img=new Image(); const r=new FileReader()
@@ -49,8 +50,8 @@ const [drvSearch,setDrvSearch]=useState('')
 const [drvFilter,setDrvFilter]=useState<'all'|'active'|'blocked'>('all')
 const [drvWiz,setDrvWiz]=useState(false)
 const [drvStep,setDrvStep]=useState(1)
-const [drvForm,setDrvForm]=useState(()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',
- selfieUrl:'',idFrontUrl:'',idBackUrl:'',licFrontUrl:'',licBackUrl:'',carImages:[] as string[],
+const [drvForm,setDrvForm]=useState(()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',password:'',confirm:'',
+ selfieUrl:'',idFrontUrl:'',idBackUrl:'',licFrontUrl:'',licBackUrl:'',carFrontUrl:'',carBackUrl:'',carLeftUrl:'',carRightUrl:'',
  carCompany:CAR_COMPANIES[0],carName:CAR_DATA[CAR_COMPANIES[0]][0],carModel:''}))
 const [drvErr,setDrvErr]=useState('')
 const [drvOtp,setDrvOtp]=useState('')
@@ -66,13 +67,43 @@ const [psgSearch,setPsgSearch]=useState('')
 const [psgFilter,setPsgFilter]=useState<'all'|'active'|'blocked'>('all')
 const [psgWiz,setPsgWiz]=useState(false)
 const [psgStep,setPsgStep]=useState(1)
-const [psgForm,setPsgForm]=useState(()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''}))
+const [psgForm,setPsgForm]=useState(()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''}))
 const [psgErr,setPsgErr]=useState('')
 const [psgOtp,setPsgOtp]=useState('')
 const [psgDevOtp,setPsgDevOtp]=useState('')
 const [psgBusy,setPsgBusy]=useState(false)
 const [psgEditId,setPsgEditId]=useState('')
 const [psgShown,setPsgShown]=useState<Record<string,string>>({})
+// ---- shared: profile view, block-duration picker, countdown ticker ----
+const [drvProfile,setDrvProfile]=useState<any>(null)
+const [psgProfile,setPsgProfile]=useState<any>(null)
+const [blockPick,setBlockPick]=useState<{kind:'driver'|'passenger',item:any}|null>(null)
+const [clockTick,setClockTick]=useState(0)
+useEffect(()=>{const i=setInterval(()=>setClockTick(t=>t+1),30000); return()=>clearInterval(i)},[])
+const remainingStr=(iso?:string|null)=>{
+ if(!iso) return 'Permanent'
+ const ms=new Date(iso).getTime()-Date.now()
+ if(ms<=0) return 'Khatam ho raha hai...'
+ const m=Math.floor(ms/60000), d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60
+ return d>0?`${d}d ${h}h baki`:h>0?`${h}h ${mm}m baki`:`${mm}m baki`
+}
+const BLOCK_OPTIONS:[string,number|null][]=[['1 Ghanta',3600000],['6 Ghante',6*3600000],['1 Din',86400000],['3 Din',3*86400000],['7 Din',7*86400000],['30 Din',30*86400000],['Permanent (hamesha)',null]]
+const confirmBlock=async(durationMs:number|null)=>{
+ if(!blockPick) return
+ const {kind,item}=blockPick
+ const blockedUntil=durationMs?new Date(Date.now()+durationMs).toISOString():null
+ const url=kind==='driver'?'/api/admin/drivers':'/api/admin/passengers'
+ const r=await api(url,'PATCH',{id:item.id,status:'blocked',blockedUntil})
+ if(!r.ok) alert(r.data.error||'Block nahi hua')
+ setBlockPick(null); setDrvProfile(null); setPsgProfile(null)
+ if(kind==='driver') loadDrivers(); else loadPassengers()
+}
+const unblockNow=async(kind:'driver'|'passenger',item:any)=>{
+ const url=kind==='driver'?'/api/admin/drivers':'/api/admin/passengers'
+ const r=await api(url,'PATCH',{id:item.id,status:'active'})
+ if(!r.ok) alert(r.data.error||'Unblock nahi hua')
+ if(kind==='driver') loadDrivers(); else loadPassengers()
+}
 const [editing,setEditing]=useState('')
 const [fUser,setFUser]=useState('')
 const [fPass,setFPass]=useState('')
@@ -141,12 +172,6 @@ const pickImage=(field:string,folder:string)=>async(e:any)=>{
  }catch(err:any){setDrvErr(err.message||'Tasveer upload nahi hui')}
  setDrvBusy(false); e.target.value=''
 }
-const addCarImage=(e:any)=>{
- const file=e.target.files?.[0]; if(!file) return
- (async()=>{try{const dataUrl=await compress(file); setDrvBusy(true); const path=await uploadImg(dataUrl,'drivers'); setDrvForm((f:any)=>({...f,carImages:[...f.carImages,path]})); setDrvPreview(p=>({...p,[path]:dataUrl}))}catch(err:any){setDrvErr(err.message||'Tasveer upload nahi hui')} setDrvBusy(false)})()
- e.target.value=''
-}
-const removeCarImage=(path:string)=>setDrvForm((f:any)=>({...f,carImages:f.carImages.filter((x:string)=>x!==path)}))
 const fetchingMedia=useRef<Set<string>>(new Set())
 const imgSrc=(path:string)=>{
  if(!path) return ''
@@ -157,11 +182,11 @@ const imgSrc=(path:string)=>{
  }
  return ''
 }
-const emptyDrvForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',
- selfieUrl:'',idFrontUrl:'',idBackUrl:'',licFrontUrl:'',licBackUrl:'',carImages:[] as string[],
+const emptyDrvForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',password:'',confirm:'',
+ selfieUrl:'',idFrontUrl:'',idBackUrl:'',licFrontUrl:'',licBackUrl:'',carFrontUrl:'',carBackUrl:'',carLeftUrl:'',carRightUrl:'',
  carCompany:CAR_COMPANIES[0],carName:CAR_DATA[CAR_COMPANIES[0]][0],carModel:''})
 const openDriverWizard=()=>{setDrvForm(emptyDrvForm()); setDrvEditId(''); setDrvStep(1); setDrvErr(''); setDrvOtp(''); setDrvDevOtp(''); setDrvDone(false); setDrvWiz(true)}
-const drvStep1Ok=()=>drvForm.firstName.trim()&&drvForm.lastName.trim()&&drvForm.username.trim().length>=3&&drvForm.password.length>=8&&drvForm.password===drvForm.confirm
+const drvStep1Ok=()=>drvForm.firstName.trim()&&drvForm.lastName.trim()&&drvForm.password.length>=8&&drvForm.password===drvForm.confirm
 const sendDriverOtp=async()=>{
  setDrvErr('')
  if(!drvStep1Ok()){setDrvErr('Pehla/aakhri naam, username, password (kam az kam 8) aur confirm password theek bharein'); return}
@@ -177,23 +202,25 @@ const submitDriver=async()=>{
  setDrvErr(''); setDrvBusy(true)
  const r=await api('/api/admin/drivers','POST',{
   firstName:drvForm.firstName,lastName:drvForm.lastName,gender:drvForm.gender,
-  countryCode:drvForm.countryCode,phone:drvForm.phone,username:drvForm.username,password:drvForm.password,
+  countryCode:drvForm.countryCode,phone:drvForm.phone,password:drvForm.password,
   selfieUrl:drvForm.selfieUrl,idFrontUrl:drvForm.idFrontUrl,idBackUrl:drvForm.idBackUrl,
-  licFrontUrl:drvForm.licFrontUrl,licBackUrl:drvForm.licBackUrl,carImages:drvForm.carImages,
+  licFrontUrl:drvForm.licFrontUrl,licBackUrl:drvForm.licBackUrl,
+  carFrontUrl:drvForm.carFrontUrl,carBackUrl:drvForm.carBackUrl,carLeftUrl:drvForm.carLeftUrl,carRightUrl:drvForm.carRightUrl,
   carCompany:drvForm.carCompany,carName:drvForm.carName,carModel:drvForm.carModel,otp:drvOtp,
  })
  setDrvBusy(false)
  if(!r.ok){setDrvErr(r.data.error||'Registration nahi ho saki'); return}
  setDrvDone(true); setDrvStep(5); loadDrivers()
 }
-const toggleDriver=async(d:any)=>{const r=await api('/api/admin/drivers','PATCH',{id:d.id,status:d.status==='blocked'?'active':'blocked'}); if(!r.ok) alert(r.data.error||'Update nahi hua'); loadDrivers()}
+const toggleDriver=(d:any)=>{if(d.status==='blocked') unblockNow('driver',d); else setBlockPick({kind:'driver',item:d})}
 const deleteDriver=async(d:any)=>{if(!confirm('"'+d.first_name+' '+d.last_name+'" ki ID delete karni hai?')) return; const r=await api('/api/admin/drivers','DELETE',{id:d.id}); if(!r.ok) alert(r.data.error||'Delete nahi hui'); loadDrivers()}
 const toggleDriverPass=async(d:any)=>{if(drvShown[d.username]!==undefined){const n={...drvShown}; delete n[d.username]; setDrvShown(n); return} const r=await api('/api/admin/drivers?reveal='+encodeURIComponent(d.username)); if(r.ok) setDrvShown(s=>({...s,[d.username]:r.data.password||''}))}
 const openEditDriver=(d:any)=>{
  setDrvEditId(d.id)
  setDrvForm({firstName:d.first_name,lastName:d.last_name,gender:d.gender,countryCode:d.country_code,phone:d.phone,username:d.username,password:'',confirm:'',
   selfieUrl:d.selfie_url||'',idFrontUrl:d.id_front_url||'',idBackUrl:d.id_back_url||'',licFrontUrl:d.lic_front_url||'',licBackUrl:d.lic_back_url||'',
-  carImages:d.car_images||[],carCompany:d.car_company||CAR_COMPANIES[0],carName:d.car_name||'',carModel:d.car_model||''})
+  carFrontUrl:d.car_front_url||'',carBackUrl:d.car_back_url||'',carLeftUrl:d.car_left_url||'',carRightUrl:d.car_right_url||'',
+  carCompany:d.car_company||CAR_COMPANIES[0],carName:d.car_name||'',carModel:d.car_model||''})
  setDrvErr(''); setDrvWiz(true); setDrvStep(0)
 }
 const saveDriverEdit=async()=>{
@@ -203,7 +230,8 @@ const saveDriverEdit=async()=>{
  setDrvErr(''); setDrvBusy(true)
  const r=await api('/api/admin/drivers','PATCH',{id:drvEditId,firstName:drvForm.firstName,lastName:drvForm.lastName,gender:drvForm.gender,
   newPassword:drvForm.password||undefined,carCompany:drvForm.carCompany,carName:drvForm.carName,carModel:drvForm.carModel,
-  selfieUrl:drvForm.selfieUrl,idFrontUrl:drvForm.idFrontUrl,idBackUrl:drvForm.idBackUrl,licFrontUrl:drvForm.licFrontUrl,licBackUrl:drvForm.licBackUrl,carImages:drvForm.carImages})
+  selfieUrl:drvForm.selfieUrl,idFrontUrl:drvForm.idFrontUrl,idBackUrl:drvForm.idBackUrl,licFrontUrl:drvForm.licFrontUrl,licBackUrl:drvForm.licBackUrl,
+  carFrontUrl:drvForm.carFrontUrl,carBackUrl:drvForm.carBackUrl,carLeftUrl:drvForm.carLeftUrl,carRightUrl:drvForm.carRightUrl})
  setDrvBusy(false)
  if(!r.ok){setDrvErr(r.data.error||'Save nahi hua'); return}
  setDrvWiz(false); setDrvEditId(''); loadDrivers()
@@ -219,7 +247,7 @@ const ImgBox=({label,field,folder}:{label:string,field:string,folder:string})=>{
  </label>)
 }
 
-const emptyPsgForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',username:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''})
+const emptyPsgForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92',phone:'',password:'',confirm:'',selfieUrl:'',idFrontUrl:'',idBackUrl:''})
 const loadPassengers=async()=>{const p=new URLSearchParams(); if(psgSearch.trim()) p.set('search',psgSearch.trim()); if(psgFilter!=='all') p.set('status',psgFilter); const r=await api('/api/admin/passengers?'+p.toString()); if(r.ok) setPassengers(r.data.passengers||[])}
 useEffect(()=>{if(isLogin&&tab==='passengers'){const t=setTimeout(loadPassengers,250); return()=>clearTimeout(t)}},[isLogin,tab,psgSearch,psgFilter])
 const pickPsgImage=(field:string)=>async(e:any)=>{
@@ -233,7 +261,7 @@ const pickPsgImage=(field:string)=>async(e:any)=>{
  setPsgBusy(false); e.target.value=''
 }
 const openPsgWizard=()=>{setPsgForm(emptyPsgForm()); setPsgEditId(''); setPsgStep(1); setPsgErr(''); setPsgOtp(''); setPsgDevOtp(''); setPsgWiz(true)}
-const psgStep1Ok=()=>psgForm.firstName.trim()&&psgForm.lastName.trim()&&psgForm.username.trim().length>=3&&psgForm.password.length>=8&&psgForm.password===psgForm.confirm
+const psgStep1Ok=()=>psgForm.firstName.trim()&&psgForm.lastName.trim()&&psgForm.password.length>=8&&psgForm.password===psgForm.confirm
 const sendPsgOtp=async()=>{
  setPsgErr('')
  if(!psgStep1Ok()){setPsgErr('Pehla/aakhri naam, username, password (kam az kam 8) aur confirm password theek bharein'); return}
@@ -249,14 +277,14 @@ const submitPsg=async()=>{
  setPsgErr(''); setPsgBusy(true)
  const r=await api('/api/admin/passengers','POST',{
   firstName:psgForm.firstName,lastName:psgForm.lastName,gender:psgForm.gender,
-  countryCode:psgForm.countryCode,phone:psgForm.phone,username:psgForm.username,password:psgForm.password,
+  countryCode:psgForm.countryCode,phone:psgForm.phone,password:psgForm.password,
   selfieUrl:psgForm.selfieUrl,idFrontUrl:psgForm.idFrontUrl,idBackUrl:psgForm.idBackUrl,otp:psgOtp,
  })
  setPsgBusy(false)
  if(!r.ok){setPsgErr(r.data.error||'Registration nahi ho saki'); return}
  setPsgStep(4); loadPassengers()
 }
-const togglePsg=async(d:any)=>{const r=await api('/api/admin/passengers','PATCH',{id:d.id,status:d.status==='blocked'?'active':'blocked'}); if(!r.ok) alert(r.data.error||'Update nahi hua'); loadPassengers()}
+const togglePsg=(d:any)=>{if(d.status==='blocked') unblockNow('passenger',d); else setBlockPick({kind:'passenger',item:d})}
 const deletePsg=async(d:any)=>{if(!confirm('"'+d.first_name+' '+d.last_name+'" ki ID delete karni hai?')) return; const r=await api('/api/admin/passengers','DELETE',{id:d.id}); if(!r.ok) alert(r.data.error||'Delete nahi hui'); loadPassengers()}
 const togglePsgPass=async(d:any)=>{if(psgShown[d.username]!==undefined){const n={...psgShown}; delete n[d.username]; setPsgShown(n); return} const r=await api('/api/admin/passengers?reveal='+encodeURIComponent(d.username)); if(r.ok) setPsgShown(s=>({...s,[d.username]:r.data.password||''}))}
 const openEditPsg=(d:any)=>{
@@ -420,15 +448,16 @@ return(
   <button onClick={openDriverWizard} className="bg-black text-white px-4 py-2 rounded-full text-sm font-bold">＋ Create New ID</button>
  </div>
 </div>
-<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Driver</th><th className="p-3 text-left">Phone</th><th className="p-3 text-left">Password</th><th className="p-3 text-left">Car</th><th className="p-3 text-center">Rating</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Driver</th><th className="p-3 text-left">Phone</th><th className="p-3 text-left">Password</th><th className="p-3 text-left">Car</th><th className="p-3 text-center">Online</th><th className="p-3 text-center">Rating</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
 {drivers.map((d:any)=><tr key={d.id} className="border-t hover:bg-gray-50 align-top">
  <td className="p-3 text-xs text-gray-500">{d.list_no}</td>
- <td className="p-3"><div className="flex gap-2 items-center"><div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shrink-0">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-xs">👤</div>}</div><div><p className="font-medium">{d.first_name} {d.last_name}</p><p className="text-xs text-gray-500">{d.gender==='male'?'Male':'Female'}</p></div></div></td>
+ <td className="p-3 cursor-pointer" onClick={()=>setDrvProfile(d)}><div className="flex gap-2 items-center"><div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shrink-0">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-xs">👤</div>}</div><div><p className="font-medium underline decoration-dotted">{d.first_name} {d.last_name}</p><p className="text-xs text-gray-500">{genderLabel(d.gender)}</p></div></div></td>
  <td className="p-3 text-xs">{d.country_code} {d.phone}</td>
  <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{drvShown[d.username]!==undefined?drvShown[d.username]:'******'}</span><button onClick={()=>toggleDriverPass(d)} className="text-gray-500 hover:text-black"><EyeIcon open={drvShown[d.username]!==undefined}/></button></div></td>
  <td className="p-3 text-xs">{d.car_company}<br/>{d.car_name} {d.car_model}</td>
+ <td className="p-3 text-center"><span className={`inline-flex items-center gap-1 text-xs font-bold ${d.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${d.online?'bg-green-500':'bg-gray-300'}`}></span>{d.online?'Online':'Offline'}</span></td>
  <td className="p-3 text-center text-xs">⭐ {d.rating||0} <span className="text-gray-400">({d.rating_count||0})</span></td>
- <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span></td>
+ <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span>{d.status==='blocked'&&<p className="text-[10px] text-gray-500 mt-1">{remainingStr(d.blocked_until)}</p>}</td>
  <td className="p-3"><div className="flex gap-2 justify-center flex-wrap"><button onClick={()=>openEditDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleDriver(d)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button><button onClick={()=>deleteDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td>
 </tr>)}
 </tbody></table>
@@ -444,14 +473,15 @@ return(
   <button onClick={openPsgWizard} className="bg-black text-white px-4 py-2 rounded-full text-sm font-bold">＋ Create New ID</button>
  </div>
 </div>
-<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Passenger</th><th className="p-3 text-left">Phone</th><th className="p-3 text-left">Password</th><th className="p-3 text-center">Rating</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
+<table className="w-full text-sm"><thead className="bg-gray-50 text-xs"><tr><th className="p-3 text-left">#</th><th className="p-3 text-left">Passenger</th><th className="p-3 text-left">Phone</th><th className="p-3 text-left">Password</th><th className="p-3 text-center">Online</th><th className="p-3 text-center">Rating</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Action</th></tr></thead><tbody>
 {passengers.map((d:any)=><tr key={d.id} className="border-t hover:bg-gray-50 align-top">
  <td className="p-3 text-xs text-gray-500">{d.list_no}</td>
- <td className="p-3"><div className="flex gap-2 items-center"><div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shrink-0">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-xs">👤</div>}</div><div><p className="font-medium">{d.first_name} {d.last_name}</p><p className="text-xs text-gray-500">{d.gender==='male'?'Male':'Female'}</p></div></div></td>
+ <td className="p-3 cursor-pointer" onClick={()=>setPsgProfile(d)}><div className="flex gap-2 items-center"><div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden shrink-0">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-xs">👤</div>}</div><div><p className="font-medium underline decoration-dotted">{d.first_name} {d.last_name}</p><p className="text-xs text-gray-500">{genderLabel(d.gender)}</p></div></div></td>
  <td className="p-3 text-xs">{d.country_code} {d.phone}</td>
  <td className="p-3"><div className="flex items-center gap-2"><span className="font-mono text-sm">{psgShown[d.username]!==undefined?psgShown[d.username]:'******'}</span><button onClick={()=>togglePsgPass(d)} className="text-gray-500 hover:text-black"><EyeIcon open={psgShown[d.username]!==undefined}/></button></div></td>
+ <td className="p-3 text-center"><span className={`inline-flex items-center gap-1 text-xs font-bold ${d.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${d.online?'bg-green-500':'bg-gray-300'}`}></span>{d.online?'Online':'Offline'}</span></td>
  <td className="p-3 text-center text-xs">⭐ {d.rating||0} <span className="text-gray-400">({d.rating_count||0})</span></td>
- <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span></td>
+ <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span>{d.status==='blocked'&&<p className="text-[10px] text-gray-500 mt-1">{remainingStr(d.blocked_until)}</p>}</td>
  <td className="p-3"><div className="flex gap-2 justify-center flex-wrap"><button onClick={()=>openEditPsg(d)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>togglePsg(d)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button><button onClick={()=>deletePsg(d)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td>
 </tr>)}
 </tbody></table>
@@ -569,7 +599,7 @@ return(
     <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={drvForm.firstName} onChange={e=>setDrvForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={drvForm.lastName} onChange={e=>setDrvForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
    </div>
-   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
+   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
    <div className="grid sm:grid-cols-2 gap-3 mt-3">
     <label className="block"><span className="text-xs font-semibold text-white/80">Naya Password (khali = purana)</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.password} onChange={e=>setDrvForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.confirm} onChange={e=>setDrvForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -578,7 +608,7 @@ return(
    <div className="grid sm:grid-cols-3 gap-3 mt-2">
     <select value={drvForm.carCompany} onChange={e=>setDrvForm((f:any)=>({...f,carCompany:e.target.value,carName:CAR_DATA[e.target.value][0]}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{CAR_COMPANIES.map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
     <select value={drvForm.carName} onChange={e=>setDrvForm((f:any)=>({...f,carName:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{(CAR_DATA[drvForm.carCompany]||[]).map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
-    <input value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} placeholder="Model / year" className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+    <select value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="" className="text-black">Model Year</option>{Array.from({length:26},(_,i)=>new Date().getFullYear()-i).map(y=><option key={y} className="text-black" value={String(y)}>{y}</option>)}</select>
    </div>
    <p className="text-xs font-bold mt-5">Tasveerein</p>
    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
@@ -588,10 +618,12 @@ return(
     <ImgBox label="License (Front)" field="licFrontUrl" folder="drivers"/>
     <ImgBox label="License (Back)" field="licBackUrl" folder="drivers"/>
    </div>
-   <p className="text-xs font-bold mt-5">Car ki tasveerein</p>
-   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-2">
-    {drvForm.carImages.map((p:string)=>(<div key={p} className="relative h-24 rounded-xl overflow-hidden border border-white/30"><img src={imgSrc(p)} className="w-full h-full object-cover"/><button onClick={()=>removeCarImage(p)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-xs">✕</button></div>))}
-    <label className="h-24 rounded-xl border border-dashed border-white/40 flex items-center justify-center text-xs text-white/60 cursor-pointer relative">+ Add<input type="file" accept="image/*" onChange={addCarImage} className="absolute inset-0 opacity-0 cursor-pointer"/></label>
+   <p className="text-xs font-bold mt-5">Car ki Tasveerein</p>
+   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+    <ImgBox label="Car Front" field="carFrontUrl" folder="drivers"/>
+    <ImgBox label="Car Back" field="carBackUrl" folder="drivers"/>
+    <ImgBox label="Car Left" field="carLeftUrl" folder="drivers"/>
+    <ImgBox label="Car Right" field="carRightUrl" folder="drivers"/>
    </div>
    <button onClick={saveDriverEdit} disabled={drvBusy} className="w-full mt-6 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500 disabled:opacity-50">{drvBusy?'Please wait...':'Save Changes'}</button>
   </>):drvStep===5?(<>
@@ -604,8 +636,7 @@ return(
      <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={drvForm.firstName} onChange={e=>setDrvForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={drvForm.lastName} onChange={e=>setDrvForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     </div>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Username</span><input value={drvForm.username} onChange={e=>setDrvForm((f:any)=>({...f,username:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
     <div className="grid sm:grid-cols-2 gap-3 mt-3">
      <label className="block"><span className="text-xs font-semibold text-white/80">Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.password} onChange={e=>setDrvForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.confirm} onChange={e=>setDrvForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -621,10 +652,12 @@ return(
      <ImgBox label="License (Front)" field="licFrontUrl" folder="drivers"/>
      <ImgBox label="License (Back)" field="licBackUrl" folder="drivers"/>
     </div>
-    <p className="text-xs font-bold mt-5">Car ki tasveerein (Front/Back/Left/Right, jitni chahiye)</p>
-    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-2">
-     {drvForm.carImages.map((p:string)=>(<div key={p} className="relative h-24 rounded-xl overflow-hidden border border-white/30"><img src={imgSrc(p)} className="w-full h-full object-cover"/><button onClick={()=>removeCarImage(p)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-xs">✕</button></div>))}
-     <label className="h-24 rounded-xl border border-dashed border-white/40 flex items-center justify-center text-xs text-white/60 cursor-pointer relative">+ Add<input type="file" accept="image/*" onChange={addCarImage} className="absolute inset-0 opacity-0 cursor-pointer"/></label>
+    <p className="text-xs font-bold mt-5">Car ki Tasveerein (Front, Back, Left, Right)</p>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+     <ImgBox label="Car Front" field="carFrontUrl" folder="drivers"/>
+     <ImgBox label="Car Back" field="carBackUrl" folder="drivers"/>
+     <ImgBox label="Car Left" field="carLeftUrl" folder="drivers"/>
+     <ImgBox label="Car Right" field="carRightUrl" folder="drivers"/>
     </div>
     <div className="flex gap-3 mt-6"><button onClick={()=>setDrvStep(1)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={()=>setDrvStep(3)} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Agay Barhein</button></div>
    </>)}
@@ -633,7 +666,7 @@ return(
     <div className="grid sm:grid-cols-3 gap-3 mt-2">
      <select value={drvForm.carCompany} onChange={e=>setDrvForm((f:any)=>({...f,carCompany:e.target.value,carName:CAR_DATA[e.target.value][0]}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{CAR_COMPANIES.map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
      <select value={drvForm.carName} onChange={e=>setDrvForm((f:any)=>({...f,carName:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{(CAR_DATA[drvForm.carCompany]||[]).map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
-     <input value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} placeholder="Model / year" className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+     <select value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="" className="text-black">Model Year</option>{Array.from({length:26},(_,i)=>new Date().getFullYear()-i).map(y=><option key={y} className="text-black" value={String(y)}>{y}</option>)}</select>
     </div>
     <p className="text-xs font-bold mt-5">Phone Number</p>
     <div className="flex gap-2 mt-2">
@@ -668,7 +701,7 @@ return(
     <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
    </div>
-   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
+   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
    <div className="grid sm:grid-cols-2 gap-3 mt-3">
     <label className="block"><span className="text-xs font-semibold text-white/80">Naya Password (khali = purana)</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -689,8 +722,7 @@ return(
      <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     </div>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-3 mt-1.5">{['male','female'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':'Female'}</button>)}</div></label>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Username</span><input value={psgForm.username} onChange={e=>setPsgForm((f:any)=>({...f,username:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
     <div className="grid sm:grid-cols-2 gap-3 mt-3">
      <label className="block"><span className="text-xs font-semibold text-white/80">Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -722,6 +754,55 @@ return(
  </div>
 </div>
 )}
+
+{blockPick && (
+<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={()=>setBlockPick(null)}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-sm rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <h3 className="text-lg font-bold">Kitni dair ke liye block karein?</h3>
+  <p className="text-xs text-white/60 mt-1">{blockPick.item.first_name} {blockPick.item.last_name}</p>
+  <div className="mt-4 space-y-2">{BLOCK_OPTIONS.map(([label,ms])=>(<button key={label} onClick={()=>confirmBlock(ms)} className="w-full text-left px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-sm font-medium">{label}</button>))}</div>
+  <button onClick={()=>setBlockPick(null)} className="w-full mt-4 py-2.5 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Cancel</button>
+ </div>
+</div>
+)}
+
+{(drvProfile||psgProfile) && (()=>{ const d=drvProfile||psgProfile; const kind:'driver'|'passenger'=drvProfile?'driver':'passenger'; const close=()=>{setDrvProfile(null); setPsgProfile(null)}; return(
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={close}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-2xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <div className="flex justify-between items-start">
+   <div className="flex gap-3 items-center"><div className="w-16 h-16 rounded-full bg-white/10 overflow-hidden shrink-0 border border-white/30">{d.selfie_url?<img src={imgSrc(d.selfie_url)} className="w-full h-full object-cover"/>:<div className="w-full h-full flex items-center justify-center text-2xl">👤</div>}</div>
+    <div><h3 className="text-xl font-bold">{d.first_name} {d.last_name}</h3><p className="text-xs text-white/60">#{d.list_no} · {genderLabel(d.gender)} · {kind==='driver'?'Driver':'Passenger'}</p>
+     <span className={`inline-flex items-center gap-1 text-xs font-bold mt-1 ${d.online?'text-green-300':'text-white/50'}`}><span className={`w-2 h-2 rounded-full ${d.online?'bg-green-400':'bg-white/30'}`}></span>{d.online?'Online':'Offline'}</span>
+    </div>
+   </div>
+   <button onClick={close} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-sm shrink-0">✕</button>
+  </div>
+
+  <div className="grid sm:grid-cols-2 gap-3 mt-5 text-sm">
+   <div className="bg-white/10 rounded-xl px-4 py-3"><p className="text-xs text-white/60">Phone</p><p className="font-medium">{d.country_code} {d.phone}</p></div>
+   <div className="bg-white/10 rounded-xl px-4 py-3"><p className="text-xs text-white/60">Rating</p><p className="font-medium">⭐ {d.rating||0} ({d.rating_count||0} reviews)</p></div>
+   <div className="bg-white/10 rounded-xl px-4 py-3"><p className="text-xs text-white/60">Status</p><p className="font-medium">{d.status==='blocked'?'Blocked — '+remainingStr(d.blocked_until):'Active'}</p></div>
+   {kind==='driver'&&<div className="bg-white/10 rounded-xl px-4 py-3"><p className="text-xs text-white/60">Car</p><p className="font-medium">{d.car_company} {d.car_name} {d.car_model}</p></div>}
+  </div>
+
+  <p className="text-xs font-bold mt-5">Tasveerein</p>
+  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-2">
+   {[['Selfie',d.selfie_url],['ID Front',d.id_front_url],['ID Back',d.id_back_url],
+     ...(kind==='driver'?[['License Front',d.lic_front_url],['License Back',d.lic_back_url],['Car Front',d.car_front_url],['Car Back',d.car_back_url],['Car Left',d.car_left_url],['Car Right',d.car_right_url]]:[])
+    ].filter(([,u])=>u).map(([label,u]:any)=>(<div key={label}><div className="h-20 rounded-xl overflow-hidden border border-white/30"><img src={imgSrc(u)} className="w-full h-full object-cover"/></div><p className="text-[10px] text-white/60 mt-1 text-center">{label}</p></div>))}
+   {![d.selfie_url,d.id_front_url,d.id_back_url].some(Boolean)&&<p className="text-xs text-white/50 col-span-full">Koi tasveer nahi</p>}
+  </div>
+
+  <p className="text-[11px] text-white/50 mt-5">Login history, live location {kind==='driver'&&'aur ride ka route '}{kind==='driver'?'driver':'passenger'} app se connect hone ke baad yahan dikhega.</p>
+
+  <div className="flex gap-3 mt-6 flex-wrap">
+   <button onClick={()=>{close(); if(kind==='driver') openEditDriver(d); else openEditPsg(d)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-white/10 border border-white/30">✏️ Edit</button>
+   <button onClick={()=>{if(d.status==='blocked') unblockNow(kind,d); else setBlockPick({kind,item:d})}} className={`flex-1 py-3 rounded-full text-sm font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button>
+   <button onClick={()=>{close(); if(kind==='driver') deleteDriver(d); else deletePsg(d)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-gray-900">🗑️ Delete</button>
+  </div>
+ </div>
+</div>
+)})()}
 
 {showModal && selected && (
 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-auto">
