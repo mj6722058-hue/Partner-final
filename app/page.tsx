@@ -12,6 +12,7 @@ const ago=(t?:string|null)=>{if(!t) return ''; const x=Math.max(0,Math.round((Da
 const dur=(a?:string|null,b?:string|null)=>{if(!a||!b) return ''; const m=Math.max(0,Math.round((new Date(b).getTime()-new Date(a).getTime())/60000)); return m<60?m+' min':Math.floor(m/60)+' ghante '+(m%60)+' min'}
 const place=(a:any)=>[a?.city,a?.region,a?.country].filter(Boolean).join(', ')||'Maloom nahi'
 const genderLabel=(g?:string)=>g==='male'?'Male':g==='female'?'Female':'Other'
+const YEARS=Array.from({length:26},(_,i)=>String(2026-i))
 const devIcon=(t?:string)=>t==='Mobile'?'📱':t==='Tablet'?'📲':'💻'
 const compress=(file:File):Promise<string>=>new Promise((resolve,reject)=>{
  const img=new Image(); const r=new FileReader()
@@ -78,6 +79,8 @@ const [psgShown,setPsgShown]=useState<Record<string,string>>({})
 const [drvProfile,setDrvProfile]=useState<any>(null)
 const [psgProfile,setPsgProfile]=useState<any>(null)
 const [blockPick,setBlockPick]=useState<{kind:'driver'|'passenger',item:any}|null>(null)
+const [balanceView,setBalanceView]=useState<{driver:any,balance:number,transactions:any[]|null}|null>(null)
+const [balForm,setBalForm]=useState({rideDetail:'',percent:'',amount:'',type:'debit'})
 const [clockTick,setClockTick]=useState(0)
 useEffect(()=>{const i=setInterval(()=>setClockTick(t=>t+1),30000); return()=>clearInterval(i)},[])
 const remainingStr=(iso?:string|null)=>{
@@ -103,6 +106,25 @@ const unblockNow=async(kind:'driver'|'passenger',item:any)=>{
  const r=await api(url,'PATCH',{id:item.id,status:'active'})
  if(!r.ok) alert(r.data.error||'Unblock nahi hua')
  if(kind==='driver') loadDrivers(); else loadPassengers()
+}
+const openBalance=async(d:any)=>{
+ setBalForm({rideDetail:'',percent:'',amount:'',type:'debit'})
+ setBalanceView({driver:d,balance:Number(d.balance||0),transactions:null})
+ const r=await api('/api/admin/drivers/balance?driverId='+d.id)
+ if(r.ok) setBalanceView(v=>v&&v.driver.id===d.id?{...v,balance:Number(r.data.balance||0),transactions:r.data.transactions||[]}:v)
+}
+const addBalanceEntry=async()=>{
+ if(!balanceView) return
+ if(!balForm.rideDetail.trim()){alert('Ride ki detail likhein'); return}
+ const amount=Number(balForm.amount)
+ if(!amount||amount<=0){alert('Amount likhein'); return}
+ const r=await api('/api/admin/drivers/balance','POST',{driverId:balanceView.driver.id,rideDetail:balForm.rideDetail.trim(),percent:Number(balForm.percent)||0,amount,type:balForm.type})
+ if(!r.ok){alert(r.data.error||'Save nahi hua'); return}
+ setBalForm({rideDetail:'',percent:'',amount:'',type:'debit'})
+ setBalanceView(v=>v?{...v,balance:Number(r.data.balance||0)}:v)
+ const r2=await api('/api/admin/drivers/balance?driverId='+balanceView.driver.id)
+ if(r2.ok) setBalanceView(v=>v?{...v,transactions:r2.data.transactions||[]}:v)
+ loadDrivers()
 }
 const [editing,setEditing]=useState('')
 const [fUser,setFUser]=useState('')
@@ -162,15 +184,17 @@ useEffect(()=>{
 const loadDrivers=async()=>{const p=new URLSearchParams(); if(drvSearch.trim()) p.set('search',drvSearch.trim()); if(drvFilter!=='all') p.set('status',drvFilter); const r=await api('/api/admin/drivers?'+p.toString()); if(r.ok) setDrivers(r.data.drivers||[])}
 useEffect(()=>{if(isLogin&&tab==='drivers'){const t=setTimeout(loadDrivers,250); return()=>clearTimeout(t)}},[isLogin,tab,drvSearch,drvFilter])
 const uploadImg=async(dataUrl:string,folder:string)=>{const r=await api('/api/admin/upload','POST',{dataUrl,folder}); if(!r.ok) throw new Error(r.data.error||'Upload fail'); return r.data.path as string}
+const [imgBusy,setImgBusy]=useState<Record<string,boolean>>({})
+const [imgErr,setImgErr]=useState<Record<string,string>>({})
 const pickImage=(field:string,folder:string)=>async(e:any)=>{
  const file=e.target.files?.[0]; if(!file) return
+ setImgErr(p=>({...p,[field]:''})); setImgBusy(p=>({...p,[field]:true}))
  try{
   const dataUrl=await compress(file)
-  setDrvErr(''); setDrvBusy(true)
   const path=await uploadImg(dataUrl,folder)
   setDrvForm((f:any)=>({...f,[field]:path})); setDrvPreview(p=>({...p,[path]:dataUrl}))
- }catch(err:any){setDrvErr(err.message||'Tasveer upload nahi hui')}
- setDrvBusy(false); e.target.value=''
+ }catch(err:any){const msg=err?.message||'Tasveer upload nahi hui, dobara koshish karein'; setImgErr(p=>({...p,[field]:msg})); setDrvErr(msg)}
+ setImgBusy(p=>({...p,[field]:false})); e.target.value=''
 }
 const fetchingMedia=useRef<Set<string>>(new Set())
 const imgSrc=(path:string)=>{
@@ -187,9 +211,11 @@ const emptyDrvForm=()=>({firstName:'',lastName:'',gender:'male',countryCode:'+92
  carCompany:CAR_COMPANIES[0],carName:CAR_DATA[CAR_COMPANIES[0]][0],carModel:''})
 const openDriverWizard=()=>{setDrvForm(emptyDrvForm()); setDrvEditId(''); setDrvStep(1); setDrvErr(''); setDrvOtp(''); setDrvDevOtp(''); setDrvDone(false); setDrvWiz(true)}
 const drvStep1Ok=()=>drvForm.firstName.trim()&&drvForm.lastName.trim()&&drvForm.password.length>=8&&drvForm.password===drvForm.confirm
+const drvStep2Ok=()=>['selfieUrl','idFrontUrl','idBackUrl','licFrontUrl','licBackUrl','carFrontUrl','carBackUrl','carLeftUrl','carRightUrl'].every(k=>!!(drvForm as any)[k])
 const sendDriverOtp=async()=>{
  setDrvErr('')
  if(!drvStep1Ok()){setDrvErr('Pehla/aakhri naam, username, password (kam az kam 8) aur confirm password theek bharein'); return}
+ if(!drvForm.carModel.trim()){setDrvErr('Car ka Model Year likhein ya chunein'); return}
  if(drvForm.phone.replace(/\D/g,'').length<6){setDrvErr('Phone number likhein'); return}
  setDrvBusy(true)
  const r=await api('/api/admin/drivers/otp','POST',{countryCode:drvForm.countryCode,phone:drvForm.phone})
@@ -238,12 +264,16 @@ const saveDriverEdit=async()=>{
 }
 const ImgBox=({label,field,folder}:{label:string,field:string,folder:string})=>{
  const path=(drvForm as any)[field] as string
+ const busy=!!imgBusy[field]; const err=imgErr[field]
  return(<label className="block">
   <span className="text-xs font-semibold text-white/80">{label}</span>
-  <div className="mt-1.5 relative h-28 rounded-xl border border-white/30 bg-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15">
-   {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:<span className="text-white/50 text-xs">+ Tasveer lagayen</span>}
-   <input type="file" accept="image/*" onChange={pickImage(field,folder)} className="absolute inset-0 opacity-0 cursor-pointer"/>
+  <div className={`mt-1.5 relative h-28 rounded-xl border overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15 ${err?'border-red-400 bg-red-500/10':'border-white/30 bg-white/10'}`}>
+   {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:!busy&&<span className="text-white/50 text-xs text-center px-2">{err?'⚠️ Dobara koshish karein':'+ Tasveer lagayen'}</span>}
+   {busy&&<div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="w-3/4 h-1.5 bg-white/20 rounded-full overflow-hidden"><div className="h-full w-1/3 bg-green-400 rounded-full upload-sweep"></div></div></div>}
+   {!busy&&path&&<div className="absolute bottom-0 left-0 right-0 bg-green-500/90 text-white text-[10px] font-bold text-center py-0.5">✓ Complete</div>}
+   <input type="file" accept="image/*" onChange={pickImage(field,folder)} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer"/>
   </div>
+  {err&&<p className="text-[10px] text-red-300 mt-1">{err}</p>}
  </label>)
 }
 
@@ -252,19 +282,20 @@ const loadPassengers=async()=>{const p=new URLSearchParams(); if(psgSearch.trim(
 useEffect(()=>{if(isLogin&&tab==='passengers'){const t=setTimeout(loadPassengers,250); return()=>clearTimeout(t)}},[isLogin,tab,psgSearch,psgFilter])
 const pickPsgImage=(field:string)=>async(e:any)=>{
  const file=e.target.files?.[0]; if(!file) return
+ setImgErr(p=>({...p,[field]:''})); setImgBusy(p=>({...p,[field]:true}))
  try{
   const dataUrl=await compress(file)
-  setPsgErr(''); setPsgBusy(true)
   const path=await uploadImg(dataUrl,'passengers')
   setPsgForm((f:any)=>({...f,[field]:path})); setDrvPreview(p=>({...p,[path]:dataUrl}))
- }catch(err:any){setPsgErr(err.message||'Tasveer upload nahi hui')}
- setPsgBusy(false); e.target.value=''
+ }catch(err:any){const msg=err?.message||'Tasveer upload nahi hui, dobara koshish karein'; setImgErr(p=>({...p,[field]:msg})); setPsgErr(msg)}
+ setImgBusy(p=>({...p,[field]:false})); e.target.value=''
 }
 const openPsgWizard=()=>{setPsgForm(emptyPsgForm()); setPsgEditId(''); setPsgStep(1); setPsgErr(''); setPsgOtp(''); setPsgDevOtp(''); setPsgWiz(true)}
 const psgStep1Ok=()=>psgForm.firstName.trim()&&psgForm.lastName.trim()&&psgForm.password.length>=8&&psgForm.password===psgForm.confirm
 const sendPsgOtp=async()=>{
  setPsgErr('')
  if(!psgStep1Ok()){setPsgErr('Pehla/aakhri naam, username, password (kam az kam 8) aur confirm password theek bharein'); return}
+ if(!psgForm.selfieUrl||!psgForm.idFrontUrl||!psgForm.idBackUrl){setPsgErr('Sab 3 tasveerein lagayen (selfie, ID front, ID back), phir Agay Barhein dabayen'); return}
  if(psgForm.phone.replace(/\D/g,'').length<6){setPsgErr('Phone number likhein'); return}
  setPsgBusy(true)
  const r=await api('/api/admin/passengers/otp','POST',{countryCode:psgForm.countryCode,phone:psgForm.phone})
@@ -306,12 +337,16 @@ const savePsgEdit=async()=>{
 }
 const PsgImgBox=({label,field}:{label:string,field:string})=>{
  const path=(psgForm as any)[field] as string
+ const busy=!!imgBusy[field]; const err=imgErr[field]
  return(<label className="block">
   <span className="text-xs font-semibold text-white/80">{label}</span>
-  <div className="mt-1.5 relative h-28 rounded-xl border border-white/30 bg-white/10 overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15">
-   {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:<span className="text-white/50 text-xs">+ Tasveer lagayen</span>}
-   <input type="file" accept="image/*" onChange={pickPsgImage(field)} className="absolute inset-0 opacity-0 cursor-pointer"/>
+  <div className={`mt-1.5 relative h-28 rounded-xl border overflow-hidden flex items-center justify-center cursor-pointer hover:bg-white/15 ${err?'border-red-400 bg-red-500/10':'border-white/30 bg-white/10'}`}>
+   {path?<img src={imgSrc(path)} className="w-full h-full object-cover"/>:!busy&&<span className="text-white/50 text-xs text-center px-2">{err?'⚠️ Dobara koshish karein':'+ Tasveer lagayen'}</span>}
+   {busy&&<div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="w-3/4 h-1.5 bg-white/20 rounded-full overflow-hidden"><div className="h-full w-1/3 bg-green-400 rounded-full upload-sweep"></div></div></div>}
+   {!busy&&path&&<div className="absolute bottom-0 left-0 right-0 bg-green-500/90 text-white text-[10px] font-bold text-center py-0.5">✓ Complete</div>}
+   <input type="file" accept="image/*" onChange={pickPsgImage(field)} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer"/>
   </div>
+  {err&&<p className="text-[10px] text-red-300 mt-1">{err}</p>}
  </label>)
 }
 
@@ -458,7 +493,7 @@ return(
  <td className="p-3 text-center"><span className={`inline-flex items-center gap-1 text-xs font-bold ${d.online?'text-green-600':'text-gray-400'}`}><span className={`w-2 h-2 rounded-full ${d.online?'bg-green-500':'bg-gray-300'}`}></span>{d.online?'Online':'Offline'}</span></td>
  <td className="p-3 text-center text-xs">⭐ {d.rating||0} <span className="text-gray-400">({d.rating_count||0})</span></td>
  <td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs ${d.status==='blocked'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{d.status==='blocked'?'Blocked':'Active'}</span>{d.status==='blocked'&&<p className="text-[10px] text-gray-500 mt-1">{remainingStr(d.blocked_until)}</p>}</td>
- <td className="p-3"><div className="flex gap-2 justify-center flex-wrap"><button onClick={()=>openEditDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleDriver(d)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button><button onClick={()=>deleteDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td>
+ <td className="p-3"><div className="flex gap-2 justify-center flex-wrap"><button onClick={()=>openBalance(d)} className="px-3 py-1 rounded-lg text-xs font-bold border border-green-600 text-green-700">Balance</button><button onClick={()=>openEditDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold border">Edit</button><button onClick={()=>toggleDriver(d)} className={`px-3 py-1 rounded-lg text-xs font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button><button onClick={()=>deleteDriver(d)} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-900 text-white">Delete</button></div></td>
 </tr>)}
 </tbody></table>
 {drivers.length===0&&<p className="text-sm text-gray-400 p-4 text-center">Koi driver nahi mila</p>}
@@ -584,7 +619,7 @@ return(
 </div>
 
 {drvWiz && (
-<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={()=>{if(drvBusy) return; setDrvWiz(false); setDrvEditId('')}}>
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md">
  <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-2xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
   <div className="flex justify-between items-start">
    <div><h3 className="text-xl font-bold">{drvEditId?'Driver ki ID edit karein':drvStep===5?'Mubarak ho! 🎉':'Create New Driver ID'}</h3><p className="text-xs text-white/60 mt-1">{drvEditId?drvForm.firstName+' '+drvForm.lastName:drvStep<5?'Step '+drvStep+' of 4':'Registration mukammal ho gayi'}</p></div>
@@ -599,7 +634,7 @@ return(
     <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={drvForm.firstName} onChange={e=>setDrvForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={drvForm.lastName} onChange={e=>setDrvForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
    </div>
-   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
+   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><select value={drvForm.gender} onChange={e=>setDrvForm((f:any)=>({...f,gender:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="male" className="text-black">Male</option><option value="female" className="text-black">Female</option><option value="other" className="text-black">Other</option></select></label>
    <div className="grid sm:grid-cols-2 gap-3 mt-3">
     <label className="block"><span className="text-xs font-semibold text-white/80">Naya Password (khali = purana)</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.password} onChange={e=>setDrvForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.confirm} onChange={e=>setDrvForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -608,7 +643,7 @@ return(
    <div className="grid sm:grid-cols-3 gap-3 mt-2">
     <select value={drvForm.carCompany} onChange={e=>setDrvForm((f:any)=>({...f,carCompany:e.target.value,carName:CAR_DATA[e.target.value][0]}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{CAR_COMPANIES.map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
     <select value={drvForm.carName} onChange={e=>setDrvForm((f:any)=>({...f,carName:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{(CAR_DATA[drvForm.carCompany]||[]).map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
-    <select value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="" className="text-black">Model Year</option>{Array.from({length:26},(_,i)=>new Date().getFullYear()-i).map(y=><option key={y} className="text-black" value={String(y)}>{y}</option>)}</select>
+    <span className="relative"><input list="carYearList" value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value.replace(/[^0-9]/g,'').slice(0,4)}))} placeholder="Model Year" className="w-full bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/><datalist id="carYearList">{YEARS.map(y=><option key={y} value={y}/>)}</datalist></span>
    </div>
    <p className="text-xs font-bold mt-5">Tasveerein</p>
    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
@@ -636,7 +671,7 @@ return(
      <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={drvForm.firstName} onChange={e=>setDrvForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={drvForm.lastName} onChange={e=>setDrvForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     </div>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setDrvForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${drvForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><select value={drvForm.gender} onChange={e=>setDrvForm((f:any)=>({...f,gender:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="male" className="text-black">Male</option><option value="female" className="text-black">Female</option><option value="other" className="text-black">Other</option></select></label>
     <div className="grid sm:grid-cols-2 gap-3 mt-3">
      <label className="block"><span className="text-xs font-semibold text-white/80">Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.password} onChange={e=>setDrvForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={drvForm.confirm} onChange={e=>setDrvForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -659,14 +694,14 @@ return(
      <ImgBox label="Car Left" field="carLeftUrl" folder="drivers"/>
      <ImgBox label="Car Right" field="carRightUrl" folder="drivers"/>
     </div>
-    <div className="flex gap-3 mt-6"><button onClick={()=>setDrvStep(1)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={()=>setDrvStep(3)} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Agay Barhein</button></div>
+    <div className="flex gap-3 mt-6"><button onClick={()=>setDrvStep(1)} className="flex-1 py-3 rounded-full text-sm font-semibold bg-white/10 border border-white/30">Pichay</button><button onClick={()=>{if(!drvStep2Ok()){setDrvErr('Sab 9 tasveerein lagayen (selfie, ID, license, car ki 4 tasveerein), phir Agay Barhein dabayen'); return} setDrvErr(''); setDrvStep(3)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Agay Barhein</button></div>
    </>)}
    {drvStep===3&&(<>
     <p className="text-xs font-bold mt-5">Car ki tafseel</p>
     <div className="grid sm:grid-cols-3 gap-3 mt-2">
      <select value={drvForm.carCompany} onChange={e=>setDrvForm((f:any)=>({...f,carCompany:e.target.value,carName:CAR_DATA[e.target.value][0]}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{CAR_COMPANIES.map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
      <select value={drvForm.carName} onChange={e=>setDrvForm((f:any)=>({...f,carName:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none">{(CAR_DATA[drvForm.carCompany]||[]).map(c=><option key={c} className="text-black" value={c}>{c}</option>)}</select>
-     <select value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="" className="text-black">Model Year</option>{Array.from({length:26},(_,i)=>new Date().getFullYear()-i).map(y=><option key={y} className="text-black" value={String(y)}>{y}</option>)}</select>
+     <span className="relative"><input list="carYearList" value={drvForm.carModel} onChange={e=>setDrvForm((f:any)=>({...f,carModel:e.target.value.replace(/[^0-9]/g,'').slice(0,4)}))} placeholder="Model Year" className="w-full bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/><datalist id="carYearList">{YEARS.map(y=><option key={y} value={y}/>)}</datalist></span>
     </div>
     <p className="text-xs font-bold mt-5">Phone Number</p>
     <div className="flex gap-2 mt-2">
@@ -688,7 +723,7 @@ return(
 )}
 
 {psgWiz && (
-<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={()=>{if(psgBusy) return; setPsgWiz(false); setPsgEditId('')}}>
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md">
  <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
   <div className="flex justify-between items-start">
    <div><h3 className="text-xl font-bold">{psgEditId?'Passenger ki ID edit karein':psgStep===4?'Mubarak ho! 🎉':'Create New Passenger ID'}</h3><p className="text-xs text-white/60 mt-1">{psgEditId?psgForm.firstName+' '+psgForm.lastName:psgStep<4?'Step '+psgStep+' of 3':'Registration mukammal ho gayi'}</p></div>
@@ -701,7 +736,7 @@ return(
     <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
    </div>
-   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
+   <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><select value={psgForm.gender} onChange={e=>setPsgForm((f:any)=>({...f,gender:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="male" className="text-black">Male</option><option value="female" className="text-black">Female</option><option value="other" className="text-black">Other</option></select></label>
    <div className="grid sm:grid-cols-2 gap-3 mt-3">
     <label className="block"><span className="text-xs font-semibold text-white/80">Naya Password (khali = purana)</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
     <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -722,7 +757,7 @@ return(
      <label className="block"><span className="text-xs font-semibold text-white/80">First Name</span><input value={psgForm.firstName} onChange={e=>setPsgForm((f:any)=>({...f,firstName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Last Name</span><input value={psgForm.lastName} onChange={e=>setPsgForm((f:any)=>({...f,lastName:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"/></label>
     </div>
-    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><div className="flex gap-2 mt-1.5">{['male','female','other'].map(g=><button key={g} onClick={()=>setPsgForm((f:any)=>({...f,gender:g}))} className={`flex-1 py-2 rounded-full text-sm font-bold border ${psgForm.gender===g?'bg-white text-black':'bg-white/10 border-white/30'}`}>{g==='male'?'Male':g==='female'?'Female':'Other'}</button>)}</div></label>
+    <label className="block mt-3"><span className="text-xs font-semibold text-white/80">Gender</span><select value={psgForm.gender} onChange={e=>setPsgForm((f:any)=>({...f,gender:e.target.value}))} className="w-full mt-1.5 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="male" className="text-black">Male</option><option value="female" className="text-black">Female</option><option value="other" className="text-black">Other</option></select></label>
     <div className="grid sm:grid-cols-2 gap-3 mt-3">
      <label className="block"><span className="text-xs font-semibold text-white/80">Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.password} onChange={e=>setPsgForm((f:any)=>({...f,password:e.target.value}))} type={showP?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowP(!showP)} className="ml-2 text-white/70"><EyeIcon open={showP}/></button></div></label>
      <label className="block"><span className="text-xs font-semibold text-white/80">Confirm Password</span><div className="flex items-center mt-1.5 bg-white/10 border border-white/30 rounded-full pl-5 pr-4 py-2.5"><input value={psgForm.confirm} onChange={e=>setPsgForm((f:any)=>({...f,confirm:e.target.value}))} type={showC?'text':'password'} className="flex-1 min-w-0 bg-transparent text-sm outline-none"/><button type="button" onClick={()=>setShowC(!showC)} className="ml-2 text-white/70"><EyeIcon open={showC}/></button></div></label>
@@ -766,6 +801,35 @@ return(
 </div>
 )}
 
+{balanceView && (
+<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={()=>setBalanceView(null)}>
+ <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-lg max-h-[88vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
+  <div className="flex justify-between items-start">
+   <div><h3 className="text-xl font-bold">Balance</h3><p className="text-xs text-white/60 mt-1">{balanceView.driver.first_name} {balanceView.driver.last_name} · #{balanceView.driver.list_no}</p></div>
+   <button onClick={()=>setBalanceView(null)} className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-sm">✕</button>
+  </div>
+  <div className="mt-4 bg-white/10 rounded-xl px-4 py-3"><p className="text-xs text-white/60">Current Balance</p><p className="text-2xl font-bold mt-1">Rs {Number(balanceView.balance||0).toLocaleString()}</p></div>
+
+  <p className="text-xs font-bold mt-5">Nai Entry Dalein</p>
+  <div className="grid sm:grid-cols-2 gap-3 mt-2">
+   <select value={balForm.type} onChange={e=>setBalForm(f=>({...f,type:e.target.value}))} className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none"><option value="debit" className="text-black">Deduction (Ride Commission)</option><option value="credit" className="text-black">Credit (Top-up)</option></select>
+   <input value={balForm.percent} onChange={e=>setBalForm(f=>({...f,percent:e.target.value.replace(/[^0-9.]/g,'')}))} placeholder="Percent %" className="bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+  </div>
+  <input value={balForm.rideDetail} onChange={e=>setBalForm(f=>({...f,rideDetail:e.target.value}))} placeholder="Ride ki detail (jaise: Peshawar → Hayatabad, Rs 500 fare)" className="w-full mt-3 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+  <input value={balForm.amount} onChange={e=>setBalForm(f=>({...f,amount:e.target.value.replace(/[^0-9.]/g,'')}))} placeholder="Amount (Rs)" className="w-full mt-3 bg-white/10 border border-white/30 rounded-full px-4 py-2.5 text-sm outline-none placeholder-white/40"/>
+  <button onClick={addBalanceEntry} className="w-full mt-3 py-3 rounded-full text-sm font-bold bg-gradient-to-r from-blue-500 to-fuchsia-500">Entry Save Karein</button>
+
+  <p className="text-xs font-bold mt-5">History</p>
+  <div className="mt-2 space-y-2 max-h-60 overflow-auto">
+   {balanceView.transactions===null?<p className="text-xs text-white/50">Load ho raha hai...</p>:
+    balanceView.transactions.length===0?<p className="text-xs text-white/50">Abhi koi entry nahi</p>:
+    balanceView.transactions.map((t:any)=>(<div key={t.id} className="bg-white/10 rounded-xl px-4 py-2.5 flex justify-between items-center gap-3"><div><p className="text-xs font-medium">{t.ride_detail}</p><p className="text-[10px] text-white/50 mt-0.5">{fmt(t.created_at)}{t.percent?' · '+t.percent+'%':''}</p></div><p className={`text-sm font-bold shrink-0 ${t.type==='credit'?'text-green-300':'text-red-300'}`}>{t.type==='credit'?'+':'-'}Rs {Number(t.amount).toLocaleString()}</p></div>))}
+  </div>
+  <p className="text-[11px] text-white/50 mt-4">Ride ka data driver app se connect hone ke baad yahan automatic aayega — abhi tak entries manually yahan se dali jaati hain.</p>
+ </div>
+</div>
+)}
+
 {(drvProfile||psgProfile) && (()=>{ const d=drvProfile||psgProfile; const kind:'driver'|'passenger'=drvProfile?'driver':'passenger'; const close=()=>{setDrvProfile(null); setPsgProfile(null)}; return(
 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-950/70 via-slate-900/60 to-fuchsia-950/60 backdrop-blur-md" onClick={close}>
  <div onClick={e=>e.stopPropagation()} className="relative w-full max-w-2xl max-h-[92vh] overflow-auto rounded-3xl border border-white/30 bg-white/15 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] p-6 text-white">
@@ -796,6 +860,7 @@ return(
   <p className="text-[11px] text-white/50 mt-5">Login history, live location {kind==='driver'&&'aur ride ka route '}{kind==='driver'?'driver':'passenger'} app se connect hone ke baad yahan dikhega.</p>
 
   <div className="flex gap-3 mt-6 flex-wrap">
+   {kind==='driver'&&<button onClick={()=>{close(); openBalance(d)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-white/10 border border-green-400 text-green-200">💰 Balance</button>}
    <button onClick={()=>{close(); if(kind==='driver') openEditDriver(d); else openEditPsg(d)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-white/10 border border-white/30">✏️ Edit</button>
    <button onClick={()=>{if(d.status==='blocked') unblockNow(kind,d); else setBlockPick({kind,item:d})}} className={`flex-1 py-3 rounded-full text-sm font-bold text-white ${d.status==='blocked'?'bg-blue-600':'bg-red-600'}`}>{d.status==='blocked'?'Unblock':'Block'}</button>
    <button onClick={()=>{close(); if(kind==='driver') deleteDriver(d); else deletePsg(d)}} className="flex-1 py-3 rounded-full text-sm font-bold bg-gray-900">🗑️ Delete</button>

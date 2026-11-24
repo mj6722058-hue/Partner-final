@@ -161,3 +161,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes upload-sweep-kf {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(340%); }
+}
+.upload-sweep {
+  animation: upload-sweep-kf 1s ease-in-out infinite;
+}

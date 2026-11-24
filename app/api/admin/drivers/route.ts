@@ -11,7 +11,7 @@ const validPassword = (p: unknown): p is string => typeof p === 'string' && p.le
 const validName = (n: unknown): n is string => typeof n === 'string' && n.trim().length >= 1 && n.trim().length <= 60
 const validGender = (g: unknown): g is string => g === 'male' || g === 'female' || g === 'other'
 
-const COLS = `id,list_no,first_name,last_name,gender,country_code,phone,username,status,blocked_until,last_active,rating,rating_count,
+const COLS = `id,list_no,first_name,last_name,gender,country_code,phone,username,status,blocked_until,last_active,rating,rating_count,balance,
  selfie_url,id_front_url,id_back_url,lic_front_url,lic_back_url,car_front_url,car_back_url,car_left_url,car_right_url,
  car_company,car_name,car_model,created_at`
 
